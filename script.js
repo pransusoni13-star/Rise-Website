@@ -574,6 +574,29 @@ const StepsProgressLine = (() => {
    10. WAITLIST FORM VALIDATION + SUBMISSION
    ================================================================ */
 const WaitlistForm = (() => {
+  /**
+   * ============================================================
+   * ⚠️  REQUIRED SETUP — READ THIS BEFORE DEPLOYING
+   * ============================================================
+   * GitHub Pages only serves static files — there is no server here,
+   * so this code needs a form backend to actually deliver email.
+   * This is wired to Formspree (free, no backend required):
+   *
+   *   1. Go to https://formspree.io and create a free account.
+   *   2. Create a new form — Formspree gives you an endpoint like
+   *      https://formspree.io/f/abcdwxyz
+   *   3. Paste that URL below, replacing the placeholder.
+   *   4. Formspree emails YOU every time someone submits. To collect
+   *      addresses for a real waitlist (not just an inbox of emails),
+   *      also connect a "Zapier"/"Make" step or a Google Sheets
+   *      integration inside your Formspree dashboard.
+   *
+   * Until you replace the URL below, submissions will fail with a
+   * visible error toast instead of silently pretending to succeed.
+   * ============================================================
+   */
+  const WAITLIST_ENDPOINT = 'https://formspree.io/f/YOUR_FORM_ID';
+
   const formEl = document.getElementById('waitlist-form');
   const nameInput = document.getElementById('waitlist-name');
   const emailInput = document.getElementById('waitlist-email');
@@ -633,15 +656,37 @@ const WaitlistForm = (() => {
   }
 
   /**
-   * Simulates a network submission. Swap this out for a real fetch()
-   * call to your backend / ESP (e.g. Mailchimp, ConvertKit, Supabase).
+   * Sends the signup to Formspree, which emails the form owner.
+   * Throws on any failure so handleSubmit() can show a real error
+   * instead of a false "success" state.
    */
-  function submitToServer(payload) {
-    return new Promise((resolve) => {
-      window.setTimeout(() => {
-        resolve({ ok: true, waitlistNumber: 2848, ...payload });
-      }, 1200);
+  async function submitToServer(payload) {
+    if (WAITLIST_ENDPOINT.includes('YOUR_FORM_ID')) {
+      throw new Error(
+        'Waitlist is not connected yet — set WAITLIST_ENDPOINT in script.js to your Formspree form URL.'
+      );
+    }
+
+    const response = await fetch(WAITLIST_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        _subject: `New RISE waitlist signup: ${payload.name}`,
+      }),
     });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      const message = errorBody?.errors?.map((e) => e.message).join(', ') || 'Submission failed.';
+      throw new Error(message);
+    }
+
+    return response.json();
   }
 
   async function handleSubmit(e) {
@@ -666,7 +711,7 @@ const WaitlistForm = (() => {
       });
       showSuccess();
     } catch (err) {
-      Toast.show('Something went wrong. Please try again.', true);
+      Toast.show(err.message || 'Something went wrong. Please try again.', true);
     } finally {
       setLoading(false);
     }
