@@ -1,13 +1,3 @@
-Line 369 in your uploaded script is:
-
-```javascript
-  const WAITLIST_ENDPOINT = 'https://formspree.io/f/YOUR_FORM_ID';
-
-```
-
-Here is your complete, updated JavaScript file with your Formspree endpoint (`[https://formspree.io/f/mnpqpare](https://formspree.io/f/mnpqpare)`) directly wired into line 369 so waitlist submissions work immediately:
-
-```javascript
 /* ================================================================
    RISE — Become 1% Better Every Day
    Production JavaScript
@@ -280,8 +270,7 @@ const SmoothScroll = (() => {
       behavior: prefersReducedMotion() ? 'auto' : 'smooth',
     });
 
-    // Move focus to the target for keyboard/screen-reader users, without
-    // adding it permanently to the tab order.
+    // Move focus to the target for keyboard/screen-reader users
     if (!target.hasAttribute('tabindex')) {
       target.setAttribute('tabindex', '-1');
     }
@@ -521,7 +510,7 @@ const FaqAccordion = (() => {
   function toggleItem(item, button, allItems) {
     const isOpen = item.classList.contains('is-open');
 
-    // Close any other open item (single-open accordion behaviour).
+    // Close any other open item (single-open accordion behavior).
     allItems.forEach((other) => {
       if (other !== item && other.classList.contains('is-open')) {
         other.classList.remove('is-open');
@@ -641,18 +630,16 @@ const WaitlistForm = (() => {
     if (formEl) formEl.classList.add('is-hidden');
     if (noteEl) noteEl.classList.add('is-hidden');
     if (successEl) successEl.classList.add('is-visible');
-    Toast.show('Welcome to RISE — you\u2019re officially on the list.');
+    Toast.show('Welcome to RISE — you’re officially on the list.');
   }
 
   /**
    * Sends the signup to Formspree, which emails the form owner.
-   * Throws on any failure so handleSubmit() can show a real error
-   * instead of a false "success" state.
    */
   async function submitToServer(payload) {
-    if (WAITLIST_ENDPOINT.includes('YOUR_FORM_ID')) {
+    if (!WAITLIST_ENDPOINT || WAITLIST_ENDPOINT.includes('YOUR_FORM_ID')) {
       throw new Error(
-        'Waitlist is not connected yet — set WAITLIST_ENDPOINT in script.js to your Formspree form URL.'
+        'Waitlist is not connected yet — set WAITLIST_ENDPOINT to your active Formspree form URL.'
       );
     }
 
@@ -711,16 +698,19 @@ const WaitlistForm = (() => {
 
     formEl.addEventListener('submit', handleSubmit);
 
-    nameInput.addEventListener('blur', validateName);
-    emailInput.addEventListener('blur', validateEmail);
+    if (nameInput) {
+      nameInput.addEventListener('blur', validateName);
+      nameInput.addEventListener('input', () => {
+        if (nameInput.classList.contains('is-invalid')) validateName();
+      });
+    }
 
-    // Clear the error state as soon as the person starts fixing it.
-    nameInput.addEventListener('input', () => {
-      if (nameInput.classList.contains('is-invalid')) validateName();
-    });
-    emailInput.addEventListener('input', () => {
-      if (emailInput.classList.contains('is-invalid')) validateEmail();
-    });
+    if (emailInput) {
+      emailInput.addEventListener('blur', validateEmail);
+      emailInput.addEventListener('input', () => {
+        if (emailInput.classList.contains('is-invalid')) validateEmail();
+      });
+    }
   }
 
   return { init };
@@ -816,13 +806,6 @@ const FooterYear = (() => {
    15. LAZY LOADING SAFETY NET
    ================================================================ */
 const LazyLoadFallback = (() => {
-  /**
-   * Modern browsers already honor the `loading="lazy"` attribute set in
-   * the HTML. This module is a safety net for the rare browser that
-   * doesn't support native lazy loading — it swaps `data-src` if present
-   * and otherwise does nothing, since the native attribute already covers
-   * every image on this page.
-   */
   function init() {
     if ('loading' in HTMLImageElement.prototype) return;
 
@@ -850,11 +833,6 @@ const LazyLoadFallback = (() => {
    16. KEYBOARD NAVIGATION POLISH
    ================================================================ */
 const KeyboardPolish = (() => {
-  /**
-   * Adds a `.user-is-tabbing` class to <body> only when the person is
-   * navigating via keyboard, so mouse users don't see focus rings from
-   * incidental clicks. Complements the CSS `:focus-visible` selector.
-   */
   function init() {
     function handleFirstTab(e) {
       if (e.key === 'Tab') {
@@ -888,5 +866,3 @@ document.addEventListener('DOMContentLoaded', () => {
   LazyLoadFallback.init();
   KeyboardPolish.init();
 });
-
-```
