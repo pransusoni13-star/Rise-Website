@@ -1,3 +1,13 @@
+Line 369 in your uploaded script is:
+
+```javascript
+  const WAITLIST_ENDPOINT = 'https://formspree.io/f/YOUR_FORM_ID';
+
+```
+
+Here is your complete, updated JavaScript file with your Formspree endpoint (`[https://formspree.io/f/mnpqpare](https://formspree.io/f/mnpqpare)`) directly wired into line 369 so waitlist submissions work immediately:
+
+```javascript
 /* ================================================================
    RISE — Become 1% Better Every Day
    Production JavaScript
@@ -574,28 +584,7 @@ const StepsProgressLine = (() => {
    10. WAITLIST FORM VALIDATION + SUBMISSION
    ================================================================ */
 const WaitlistForm = (() => {
-  /**
-   * ============================================================
-   * ⚠️  REQUIRED SETUP — READ THIS BEFORE DEPLOYING
-   * ============================================================
-   * GitHub Pages only serves static files — there is no server here,
-   * so this code needs a form backend to actually deliver email.
-   * This is wired to Formspree (free, no backend required):
-   *
-   *   1. Go to https://formspree.io and create a free account.
-   *   2. Create a new form — Formspree gives you an endpoint like
-   *      https://formspree.io/f/abcdwxyz
-   *   3. Paste that URL below, replacing the placeholder.
-   *   4. Formspree emails YOU every time someone submits. To collect
-   *      addresses for a real waitlist (not just an inbox of emails),
-   *      also connect a "Zapier"/"Make" step or a Google Sheets
-   *      integration inside your Formspree dashboard.
-   *
-   * Until you replace the URL below, submissions will fail with a
-   * visible error toast instead of silently pretending to succeed.
-   * ============================================================
-   */
-  const WAITLIST_ENDPOINT = 'https://formspree.io/f/YOUR_FORM_ID';
+  const WAITLIST_ENDPOINT = 'https://formspree.io/f/mnpqpare';
 
   const formEl = document.getElementById('waitlist-form');
   const nameInput = document.getElementById('waitlist-name');
@@ -899,3 +888,5 @@ document.addEventListener('DOMContentLoaded', () => {
   LazyLoadFallback.init();
   KeyboardPolish.init();
 });
+
+```
