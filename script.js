@@ -573,7 +573,8 @@ const StepsProgressLine = (() => {
    10. WAITLIST FORM VALIDATION + SUBMISSION
    ================================================================ */
 const WaitlistForm = (() => {
-  const WAITLIST_ENDPOINT = 'https://formspree.io/f/mnpqpare';
+  // Vercel serves this serverless endpoint from /api/waitlist.js
+  const WAITLIST_ENDPOINT = '/api/waitlist';
 
   const formEl = document.getElementById('waitlist-form');
   const nameInput = document.getElementById('waitlist-name');
@@ -587,14 +588,17 @@ const WaitlistForm = (() => {
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   function setFieldError(input, errorEl, message) {
+    if (!input) return;
     input.classList.toggle('is-invalid', Boolean(message));
     input.setAttribute('aria-invalid', message ? 'true' : 'false');
     if (errorEl) errorEl.textContent = message || '';
   }
 
   function validateName() {
+    if (!nameInput) return false;
     const value = nameInput.value.trim();
-    if (value.length === 0) {
+
+    if (!value) {
       setFieldError(nameInput, nameError, 'Please enter your name.');
       return false;
     }
@@ -602,13 +606,16 @@ const WaitlistForm = (() => {
       setFieldError(nameInput, nameError, 'That name looks a little short.');
       return false;
     }
+
     setFieldError(nameInput, nameError, '');
     return true;
   }
 
   function validateEmail() {
+    if (!emailInput) return false;
     const value = emailInput.value.trim();
-    if (value.length === 0) {
+
+    if (!value) {
       setFieldError(emailInput, emailError, 'Please enter your email.');
       return false;
     }
@@ -616,6 +623,7 @@ const WaitlistForm = (() => {
       setFieldError(emailInput, emailError, 'Please enter a valid email address.');
       return false;
     }
+
     setFieldError(emailInput, emailError, '');
     return true;
   }
@@ -624,45 +632,88 @@ const WaitlistForm = (() => {
     if (!submitBtn) return;
     submitBtn.classList.toggle('is-loading', isLoading);
     submitBtn.disabled = isLoading;
+
+    const textEl = submitBtn.querySelector('.btn-text');
+    if (textEl) textEl.textContent = isLoading ? 'Joining...' : 'Reserve My Spot';
   }
 
-  function showSuccess() {
+  function showSuccess(data) {
     if (formEl) formEl.classList.add('is-hidden');
     if (noteEl) noteEl.classList.add('is-hidden');
-    if (successEl) successEl.classList.add('is-visible');
-    Toast.show('Welcome to RISE — you’re officially on the list.');
+    if (!successEl) return;
+
+    successEl.innerHTML = '';
+
+    const icon = document.createElement('div');
+    icon.className = 'success-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '✓';
+
+    const heading = document.createElement('h3');
+    heading.textContent = "You're on the list!";
+
+    const message = document.createElement('p');
+    message.textContent = 'Your RISE confirmation has been sent to your email.';
+
+    const number = document.createElement('p');
+    number.className = 'waitlist-number';
+    const numberLabel = document.createElement('strong');
+    numberLabel.textContent = 'Your Waitlist Number: ';
+    const numberValue = document.createElement('span');
+    numberValue.textContent =
+      data.waitlistNumber != null
+        ? `#${String(data.waitlistNumber).padStart(4, '0')}`
+        : 'Pending';
+    number.append(numberLabel, numberValue);
+
+    const code = document.createElement('p');
+    code.className = 'confirmation-code';
+    const codeLabel = document.createElement('strong');
+    codeLabel.textContent = 'Confirmation Code: ';
+    const codeValue = document.createElement('span');
+    codeValue.textContent = data.confirmationCode || 'Check your email';
+    code.append(codeLabel, codeValue);
+
+    successEl.append(icon, heading, message, number, code);
+    successEl.classList.add('is-visible');
+
+    Toast.show(
+      data.waitlistNumber != null
+        ? `Welcome to RISE — you're #${String(data.waitlistNumber).padStart(4, '0')}!`
+        : "Welcome to RISE — you're officially on the list."
+    );
   }
 
-  /**
-   * Sends the signup to Formspree, which emails the form owner.
-   */
   async function submitToServer(payload) {
-    if (!WAITLIST_ENDPOINT || WAITLIST_ENDPOINT.includes('YOUR_FORM_ID')) {
-      throw new Error(
-        'Waitlist is not connected yet — set WAITLIST_ENDPOINT to your active Formspree form URL.'
-      );
-    }
-
     const response = await fetch(WAITLIST_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json',
+        'Accept': 'application/json'
       },
-      body: JSON.stringify({
-        name: payload.name,
-        email: payload.email,
-        _subject: `New RISE waitlist signup: ${payload.name}`,
-      }),
+      body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      const message = errorBody?.errors?.map((e) => e.message).join(', ') || 'Submission failed.';
-      throw new Error(message);
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
     }
 
-    return response.json();
+    if (!response.ok) {
+      throw new Error(
+        data?.message ||
+        data?.error ||
+        'We could not add you to the waitlist. Please try again.'
+      );
+    }
+
+    if (!data?.success) {
+      throw new Error(data?.message || 'We could not confirm your signup. Please try again.');
+    }
+
+    return data;
   }
 
   async function handleSubmit(e) {
@@ -673,7 +724,7 @@ const WaitlistForm = (() => {
 
     if (!isNameValid || !isEmailValid) {
       const firstInvalid = !isNameValid ? nameInput : emailInput;
-      firstInvalid.focus();
+      firstInvalid?.focus();
       Toast.show('Please fix the highlighted fields.', true);
       return;
     }
@@ -681,12 +732,13 @@ const WaitlistForm = (() => {
     setLoading(true);
 
     try {
-      await submitToServer({
+      const data = await submitToServer({
         name: nameInput.value.trim(),
-        email: emailInput.value.trim(),
+        email: emailInput.value.trim().toLowerCase()
       });
-      showSuccess();
+      showSuccess(data);
     } catch (err) {
+      console.error('RISE waitlist error:', err);
       Toast.show(err.message || 'Something went wrong. Please try again.', true);
     } finally {
       setLoading(false);
@@ -698,19 +750,15 @@ const WaitlistForm = (() => {
 
     formEl.addEventListener('submit', handleSubmit);
 
-    if (nameInput) {
-      nameInput.addEventListener('blur', validateName);
-      nameInput.addEventListener('input', () => {
-        if (nameInput.classList.contains('is-invalid')) validateName();
-      });
-    }
+    nameInput?.addEventListener('blur', validateName);
+    nameInput?.addEventListener('input', () => {
+      if (nameInput.classList.contains('is-invalid')) validateName();
+    });
 
-    if (emailInput) {
-      emailInput.addEventListener('blur', validateEmail);
-      emailInput.addEventListener('input', () => {
-        if (emailInput.classList.contains('is-invalid')) validateEmail();
-      });
-    }
+    emailInput?.addEventListener('blur', validateEmail);
+    emailInput?.addEventListener('input', () => {
+      if (emailInput.classList.contains('is-invalid')) validateEmail();
+    });
   }
 
   return { init };
