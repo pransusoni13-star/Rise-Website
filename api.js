@@ -9,7 +9,9 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const FROM_EMAIL =
-  process.env.RESEND_FROM_EMAIL || 'RISE <onboarding@resend.dev>';
+  process.env.RESEND_FROM_EMAIL ||
+  process.env.EMAIL_FROM ||
+  'RISE <onboarding@resend.dev>';
 
 const CODE_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
