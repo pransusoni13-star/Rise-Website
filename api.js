@@ -1,7 +1,12 @@
+
 'use strict';
 
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
+
+/* ================================================================
+   ENVIRONMENT / CLIENTS
+   ================================================================ */
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -17,10 +22,17 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const FROM_EMAIL =
-  process.env.RESEND_FROM_EMAIL || 'RISE <hello@riseapp.co>';
+  process.env.RESEND_FROM_EMAIL ||
+  'RISE <hello@riseapp.co>';
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
 
 function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
+  return String(email || '')
+    .trim()
+    .toLowerCase();
 }
 
 function cleanName(name) {
@@ -31,12 +43,15 @@ function cleanName(name) {
 }
 
 function generateConfirmationCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const alphabet =
+    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
   let code = '';
 
   for (let i = 0; i < 6; i++) {
-    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    code += alphabet[
+      Math.floor(Math.random() * alphabet.length)
+    ];
   }
 
   return `RISE-${code}`;
@@ -46,19 +61,35 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function emailHTML({ name, waitlistNumber, confirmationCode }) {
-  const safeName = name
+function escapeHTML(value) {
+  return String(value || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/* ================================================================
+   EMAIL TEMPLATE
+   ================================================================ */
+
+function emailHTML({
+  name,
+  waitlistNumber,
+  confirmationCode
+}) {
+  const safeName = escapeHTML(name);
 
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
   <title>Your RISE Waitlist Confirmation</title>
 </head>
 
@@ -117,7 +148,8 @@ function emailHTML({ name, waitlistNumber, confirmationCode }) {
         font-size:16px;
         line-height:1.7;
       ">
-        Your spot on the RISE waitlist has been successfully reserved.
+        Your spot on the RISE waitlist has been
+        successfully reserved.
       </p>
 
       <div style="
@@ -172,8 +204,9 @@ function emailHTML({ name, waitlistNumber, confirmationCode }) {
         font-size:14px;
         line-height:1.6;
       ">
-        Keep your confirmation code somewhere safe. We'll use your
-        waitlist number to determine your place in line for early access.
+        Keep your confirmation code somewhere safe.
+        Your waitlist number determines your place
+        in line for early access.
       </p>
 
       <div style="
@@ -204,11 +237,20 @@ function emailHTML({ name, waitlistNumber, confirmationCode }) {
 `;
 }
 
+/* ================================================================
+   SEND CONFIRMATION EMAIL
+   ================================================================ */
+
 async function sendConfirmation(row) {
   const result = await resend.emails.send({
     from: FROM_EMAIL,
+
     to: [row.email],
-    subject: `You're #${row.waitlist_number} on the RISE waitlist`,
+
+    subject:
+      `You're #${String(row.waitlist_number).padStart(4, '0')} ` +
+      `on the RISE waitlist`,
+
     html: emailHTML({
       name: row.name,
       waitlistNumber: row.waitlist_number,
@@ -217,13 +259,24 @@ async function sendConfirmation(row) {
   });
 
   if (result.error) {
-    throw new Error(result.error.message || 'Email could not be sent.');
+    throw new Error(
+      result.error.message ||
+      'Email could not be sent.'
+    );
   }
 
   return result;
 }
 
+/* ================================================================
+   HANDLER
+   ================================================================ */
+
 module.exports = async function handler(req, res) {
+
+  /* --------------------------------------------------------------
+     METHOD CHECK
+     -------------------------------------------------------------- */
 
   if (req.method !== 'POST') {
     return res.status(405).json({
@@ -233,6 +286,10 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+
+    /* ------------------------------------------------------------
+       READ REQUEST
+       ------------------------------------------------------------ */
 
     let body = req.body;
 
@@ -246,6 +303,10 @@ module.exports = async function handler(req, res) {
         });
       }
     }
+
+    /* ------------------------------------------------------------
+       CLEAN INPUT
+       ------------------------------------------------------------ */
 
     const name = cleanName(body?.name);
     const email = normalizeEmail(body?.email);
@@ -271,114 +332,189 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ------------------------------------------------------------
-    // Check whether this email is already on the waitlist.
-    // ------------------------------------------------------------
+    /* ------------------------------------------------------------
+       CHECK EXISTING EMAIL
+       ------------------------------------------------------------ */
 
-    const { data: existing, error: lookupError } = await supabase
+    const {
+      data: existing,
+      error: lookupError
+    } = await supabase
       .from('waitlist')
       .select('*')
       .ilike('email', email)
       .maybeSingle();
 
     if (lookupError) {
-      console.error('Supabase lookup error:', lookupError);
+      console.error(
+        'Supabase lookup error:',
+        lookupError
+      );
 
       return res.status(500).json({
         success: false,
-        message: 'We could not check the waitlist. Please try again.'
+        message:
+          'We could not check the waitlist. Please try again.'
       });
     }
 
-    // ------------------------------------------------------------
-    // Existing person
-    // ------------------------------------------------------------
+    /* ------------------------------------------------------------
+       EXISTING USER
+       ------------------------------------------------------------ */
 
     if (existing) {
 
-      let emailSent = existing.email_status === 'sent';
+      let emailSent =
+        existing.email_status === 'sent';
 
-      // If their email wasn't successfully sent before,
-      // try sending it again.
+      /*
+       * If the confirmation email previously failed,
+       * try sending it again.
+       */
+
       if (!emailSent) {
         try {
 
           await sendConfirmation(existing);
 
-          await supabase
+          const {
+            error: updateError
+          } = await supabase
             .from('waitlist')
             .update({
               email_status: 'sent',
-              email_sent_at: new Date().toISOString(),
+              email_sent_at:
+                new Date().toISOString(),
               last_email_error: null
             })
-            .eq('waitlist_number', existing.waitlist_number);
+            .eq(
+              'waitlist_number',
+              existing.waitlist_number
+            );
+
+          if (updateError) {
+            console.error(
+              'Email status update error:',
+              updateError
+            );
+          }
 
           emailSent = true;
 
         } catch (emailError) {
 
-          console.error('Existing-user email error:', emailError);
+          console.error(
+            'Existing-user email error:',
+            emailError
+          );
 
           await supabase
             .from('waitlist')
             .update({
               email_status: 'failed',
-              last_email_error: String(emailError.message || emailError)
+              last_email_error:
+                String(
+                  emailError.message ||
+                  emailError
+                )
             })
-            .eq('waitlist_number', existing.waitlist_number);
+            .eq(
+              'waitlist_number',
+              existing.waitlist_number
+            );
         }
       }
 
       return res.status(200).json({
         success: true,
         alreadyJoined: true,
-        waitlistNumber: existing.waitlist_number,
-        confirmationCode: existing.confirmation_code,
+        waitlistNumber:
+          existing.waitlist_number,
+        confirmationCode:
+          existing.confirmation_code,
         emailSent
       });
     }
 
-    // ------------------------------------------------------------
-    // Get next waitlist number.
-    // ------------------------------------------------------------
+    /* ------------------------------------------------------------
+       GET NEXT WAITLIST NUMBER
+       ------------------------------------------------------------ */
 
-    const { data: numberData, error: numberError } = await supabase
-      .rpc('get_or_create_waitlist_number');
+    const {
+      data: numberData,
+      error: numberError
+    } = await supabase.rpc(
+      'get_or_create_waitlist_number'
+    );
 
     if (numberError) {
-      console.error('Waitlist number error:', numberError);
+
+      console.error(
+        'Waitlist number error:',
+        numberError
+      );
 
       return res.status(500).json({
         success: false,
-        message: 'We could not reserve your waitlist number.'
+        message:
+          'We could not reserve your waitlist number.'
       });
     }
 
-    const waitlistNumber = Number(numberData);
+    const waitlistNumber =
+      Number(numberData);
 
-    // ------------------------------------------------------------
-    // Create unique confirmation code.
-    // ------------------------------------------------------------
+    if (
+      !Number.isInteger(waitlistNumber) ||
+      waitlistNumber < 1
+    ) {
+      console.error(
+        'Invalid waitlist number:',
+        numberData
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          'We could not create your waitlist number.'
+      });
+    }
+
+    /* ------------------------------------------------------------
+       CREATE UNIQUE CONFIRMATION CODE + INSERT
+       ------------------------------------------------------------ */
 
     let confirmationCode = null;
     let newRow = null;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
 
-      const candidate = generateConfirmationCode();
+      const candidate =
+        generateConfirmationCode();
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error
+      } = await supabase
         .from('waitlist')
         .insert({
-          waitlist_number: waitlistNumber,
+          waitlist_number:
+            waitlistNumber,
+
           name,
+
           email,
-          confirmation_code: candidate,
-          email_status: 'pending'
+
+          confirmation_code:
+            candidate,
+
+          email_status:
+            'pending'
         })
         .select('*')
         .single();
+
+      /* Successful insert */
 
       if (!error) {
         confirmationCode = candidate;
@@ -386,48 +522,121 @@ module.exports = async function handler(req, res) {
         break;
       }
 
-      // Unique confirmation code collision.
-      if (error.code === '23505') {
-        continue;
-      }
+      /*
+       * PostgreSQL 23505 means a UNIQUE constraint
+       * was violated.
+       */
 
-      // Email race condition.
       if (error.code === '23505') {
-        const { data: duplicate } = await supabase
+
+        /*
+         * Check whether another request just
+         * registered this email.
+         */
+
+        const {
+          data: duplicate,
+          error: duplicateLookupError
+        } = await supabase
           .from('waitlist')
           .select('*')
           .ilike('email', email)
           .maybeSingle();
 
+        if (duplicateLookupError) {
+          console.error(
+            'Duplicate lookup error:',
+            duplicateLookupError
+          );
+        }
+
         if (duplicate) {
+
+          let duplicateEmailSent =
+            duplicate.email_status === 'sent';
+
+          if (!duplicateEmailSent) {
+            try {
+              await sendConfirmation(
+                duplicate
+              );
+
+              await supabase
+                .from('waitlist')
+                .update({
+                  email_status: 'sent',
+                  email_sent_at:
+                    new Date().toISOString(),
+                  last_email_error: null
+                })
+                .eq(
+                  'waitlist_number',
+                  duplicate.waitlist_number
+                );
+
+              duplicateEmailSent = true;
+
+            } catch (emailError) {
+
+              console.error(
+                'Duplicate-user email error:',
+                emailError
+              );
+            }
+          }
+
           return res.status(200).json({
             success: true,
             alreadyJoined: true,
-            waitlistNumber: duplicate.waitlist_number,
-            confirmationCode: duplicate.confirmation_code,
-            emailSent: duplicate.email_status === 'sent'
+            waitlistNumber:
+              duplicate.waitlist_number,
+            confirmationCode:
+              duplicate.confirmation_code,
+            emailSent:
+              duplicateEmailSent
           });
         }
+
+        /*
+         * If there was no duplicate email,
+         * the collision was almost certainly
+         * the confirmation code.
+         *
+         * Try another confirmation code.
+         */
+
+        continue;
       }
 
-      console.error('Waitlist insert error:', error);
+      /* Any other database error */
+
+      console.error(
+        'Waitlist insert error:',
+        error
+      );
 
       return res.status(500).json({
         success: false,
-        message: 'We could not save your waitlist spot.'
+        message:
+          'We could not save your waitlist spot.'
       });
     }
+
+    /* ------------------------------------------------------------
+       MAKE SURE INSERT SUCCEEDED
+       ------------------------------------------------------------ */
 
     if (!newRow) {
       return res.status(500).json({
         success: false,
-        message: 'Could not generate a confirmation code. Please try again.'
+        message:
+          'Could not generate a confirmation code. Please try again.'
       });
     }
 
-    // ------------------------------------------------------------
-    // Send confirmation email.
-    // ------------------------------------------------------------
+    /* ------------------------------------------------------------
+       SEND CONFIRMATION EMAIL
+       ------------------------------------------------------------ */
 
     let emailSent = false;
 
@@ -435,29 +644,56 @@ module.exports = async function handler(req, res) {
 
       await sendConfirmation(newRow);
 
-      await supabase
+      const {
+        error: updateError
+      } = await supabase
         .from('waitlist')
         .update({
           email_status: 'sent',
-          email_sent_at: new Date().toISOString(),
+          email_sent_at:
+            new Date().toISOString(),
           last_email_error: null
         })
-        .eq('waitlist_number', waitlistNumber);
+        .eq(
+          'waitlist_number',
+          waitlistNumber
+        );
+
+      if (updateError) {
+        console.error(
+          'Email status update error:',
+          updateError
+        );
+      }
 
       emailSent = true;
 
     } catch (emailError) {
 
-      console.error('New-user email error:', emailError);
+      console.error(
+        'New-user email error:',
+        emailError
+      );
 
       await supabase
         .from('waitlist')
         .update({
           email_status: 'failed',
-          last_email_error: String(emailError.message || emailError)
+          last_email_error:
+            String(
+              emailError.message ||
+              emailError
+            )
         })
-        .eq('waitlist_number', waitlistNumber);
+        .eq(
+          'waitlist_number',
+          waitlistNumber
+        );
     }
+
+    /* ------------------------------------------------------------
+       SUCCESS RESPONSE
+       ------------------------------------------------------------ */
 
     return res.status(200).json({
       success: true,
@@ -469,11 +705,16 @@ module.exports = async function handler(req, res) {
 
   } catch (error) {
 
-    console.error('Unexpected waitlist error:', error);
+    console.error(
+      'Unexpected waitlist error:',
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: 'Something went wrong. Please try again.'
+      message:
+        'Something went wrong. Please try again.'
     });
   }
 };
+
