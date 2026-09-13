@@ -1398,7 +1398,9 @@ const WaitlistForm = (() => {
 
     if (data.alreadyJoined) {
       message.textContent =
-        'We found your existing RISE waitlist spot.';
+        data.emailSent === true
+          ? 'We found your existing RISE waitlist spot and resent your confirmation email.'
+          : 'We found your existing RISE waitlist spot.';
     } else if (
       data.emailSent === false
     ) {
@@ -1622,7 +1624,9 @@ const WaitlistForm = (() => {
           email:
             emailInput.value
               .trim()
-              .toLowerCase()
+              .toLowerCase(),
+
+          resendConfirmation: true
         });
 
       showSuccess(data);
