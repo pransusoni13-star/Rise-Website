@@ -1,6 +1,10 @@
 // api/waitlist.js
 
 export default async function handler(req, res) {
+  // ============================================================
+  // METHOD
+  // ============================================================
+
   if (req.method !== "POST") {
     return res.status(405).json({
       success: false,
@@ -8,17 +12,21 @@ export default async function handler(req, res) {
     });
   }
 
+  // ============================================================
+  // ENVIRONMENT VARIABLES
+  // ============================================================
+
   const {
     RESEND_API_KEY,
     RISE_ADMIN_EMAIL,
-    RISE_FROM_EMAIL,
+    RESEND_FROM_EMAIL,
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY,
   } = process.env;
 
-  // ------------------------------------------------------------
-  // CHECK CONFIGURATION
-  // ------------------------------------------------------------
+  // ============================================================
+  // CONFIGURATION CHECKS
+  // ============================================================
 
   if (!RESEND_API_KEY) {
     return res.status(500).json({
@@ -49,9 +57,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // ------------------------------------------------------------
-  // READ REQUEST
-  // ------------------------------------------------------------
+  // ============================================================
+  // REQUEST DATA
+  // ============================================================
 
   const {
     name,
@@ -69,9 +77,9 @@ export default async function handler(req, res) {
       ? email.trim().toLowerCase()
       : "";
 
-  // ------------------------------------------------------------
+  // ============================================================
   // VALIDATION
-  // ------------------------------------------------------------
+  // ============================================================
 
   if (cleanName.length < 2) {
     return res.status(400).json({
@@ -80,6 +88,7 @@ export default async function handler(req, res) {
     });
   }
 
+  // FIXED EMAIL REGEX
   const EMAIL_REGEX =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -90,9 +99,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // ------------------------------------------------------------
-  // SUPABASE HELPER
-  // ------------------------------------------------------------
+  // ============================================================
+  // SUPABASE REQUEST HELPER
+  // ============================================================
 
   async function supabaseRequest(
     endpoint,
@@ -144,17 +153,25 @@ export default async function handler(req, res) {
     return data;
   }
 
-  // ------------------------------------------------------------
-  // CHECK IF EMAIL ALREADY EXISTS
-  // ------------------------------------------------------------
+  // ============================================================
+  // MAIN LOGIC
+  // ============================================================
 
   try {
+    // ----------------------------------------------------------
+    // CHECK EXISTING EMAIL
+    // ----------------------------------------------------------
+
     const existing =
       await supabaseRequest(
         `waitlist?email=eq.${encodeURIComponent(
           cleanEmail
-        )}&select=id,name,email,confirmation_code,created_at`
+        )}&select=id,name,email,waitlist_number,confirmation_code,created_at`
       );
+
+    // ----------------------------------------------------------
+    // EXISTING USER
+    // ----------------------------------------------------------
 
     if (
       Array.isArray(existing) &&
@@ -164,33 +181,44 @@ export default async function handler(req, res) {
         existing[0];
 
       const waitlistNumber =
-        Number(existingUser.id);
+        Number(
+          existingUser.waitlist_number ||
+          existingUser.id
+        );
 
       let emailSent = false;
 
       // --------------------------------------------------------
-      // RESEND EXISTING CONFIRMATION
+      // RESEND CONFIRMATION
       // --------------------------------------------------------
 
-      if (resendConfirmation !== false) {
+      if (
+        resendConfirmation !== false
+      ) {
         try {
           await sendEmail({
             apiKey: RESEND_API_KEY,
 
             from:
-              RISE_FROM_EMAIL ||
+              RESEND_FROM_EMAIL ||
               "RISE <onboarding@resend.dev>",
 
             to: cleanEmail,
 
             subject:
-              "Your RISE Waitlist Confirmation 🚀",
+              `Your RISE Waitlist Confirmation — #${String(
+                waitlistNumber
+              ).padStart(4, "0")}`,
 
             html: userEmailHTML({
-              name: existingUser.name,
+              name:
+                existingUser.name,
+
               waitlistNumber,
+
               confirmationCode:
                 existingUser.confirmation_code,
+
               existing: true,
             }),
           });
@@ -229,10 +257,31 @@ export default async function handler(req, res) {
       `RISE-${randomCode(8)}`;
 
     // ----------------------------------------------------------
-    // INSERT NEW USER
+    // GET NEXT WAITLIST NUMBER
     //
-    // The database identity ID becomes the permanent
-    // waitlist number.
+    // This looks at the highest existing number and adds 1.
+    // ----------------------------------------------------------
+
+    const latest =
+      await supabaseRequest(
+        "waitlist?select=waitlist_number&order=waitlist_number.desc&limit=1"
+      );
+
+    let nextNumber = 1;
+
+    if (
+      Array.isArray(latest) &&
+      latest.length > 0 &&
+      latest[0].waitlist_number != null
+    ) {
+      nextNumber =
+        Number(
+          latest[0].waitlist_number
+        ) + 1;
+    }
+
+    // ----------------------------------------------------------
+    // INSERT USER
     // ----------------------------------------------------------
 
     let inserted;
@@ -251,7 +300,12 @@ export default async function handler(req, res) {
 
             body: JSON.stringify({
               name: cleanName,
+
               email: cleanEmail,
+
+              waitlist_number:
+                nextNumber,
+
               confirmation_code:
                 confirmationCode,
             }),
@@ -285,32 +339,44 @@ export default async function handler(req, res) {
       inserted[0];
 
     const waitlistNumber =
-      Number(user.id);
+      Number(
+        user.waitlist_number
+      );
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // SEND USER EMAIL
-    // ----------------------------------------------------------
+    // ==========================================================
 
     let userEmailSent = false;
 
-    if (resendConfirmation !== false) {
+    if (
+      resendConfirmation !== false
+    ) {
       try {
         await sendEmail({
           apiKey: RESEND_API_KEY,
 
           from:
-            RISE_FROM_EMAIL ||
+            RESEND_FROM_EMAIL ||
             "RISE <onboarding@resend.dev>",
 
           to: cleanEmail,
 
           subject:
-            "You're officially on the RISE waitlist 🚀",
+            `You're #${String(
+              waitlistNumber
+            ).padStart(
+              4,
+              "0"
+            )} on the RISE waitlist 🚀`,
 
           html: userEmailHTML({
             name: cleanName,
+
             waitlistNumber,
+
             confirmationCode,
+
             existing: false,
           }),
         });
@@ -324,9 +390,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // SEND ADMIN EMAIL
-    // ----------------------------------------------------------
+    // ==========================================================
 
     let adminEmailSent = false;
 
@@ -335,7 +401,7 @@ export default async function handler(req, res) {
         apiKey: RESEND_API_KEY,
 
         from:
-          RISE_FROM_EMAIL ||
+          RESEND_FROM_EMAIL ||
           "RISE <onboarding@resend.dev>",
 
         to: RISE_ADMIN_EMAIL,
@@ -343,12 +409,18 @@ export default async function handler(req, res) {
         subject:
           `New RISE Waitlist Signup — #${String(
             waitlistNumber
-          ).padStart(4, "0")}`,
+          ).padStart(
+            4,
+            "0"
+          )}`,
 
         html: adminEmailHTML({
           name: cleanName,
+
           email: cleanEmail,
+
           waitlistNumber,
+
           confirmationCode,
         }),
       });
@@ -361,23 +433,30 @@ export default async function handler(req, res) {
       );
     }
 
-    // ----------------------------------------------------------
-    // FINAL RESULT
-    // ----------------------------------------------------------
+    // ==========================================================
+    // FINAL LOG
+    // ==========================================================
 
     console.log(
       "NEW RISE WAITLIST SIGNUP:",
       JSON.stringify(
         {
           waitlistNumber,
+
           email: cleanEmail,
+
           userEmailSent,
+
           adminEmailSent,
         },
         null,
         2
       )
     );
+
+    // ==========================================================
+    // RESPONSE TO WEBSITE
+    // ==========================================================
 
     return res.status(200).json({
       success: true,
@@ -410,7 +489,7 @@ export default async function handler(req, res) {
 }
 
 // ============================================================
-// RESEND
+// RESEND EMAIL
 // ============================================================
 
 async function sendEmail({
@@ -436,8 +515,11 @@ async function sendEmail({
 
         body: JSON.stringify({
           from,
+
           to: [to],
+
           subject,
+
           html,
         }),
       }
@@ -470,7 +552,7 @@ async function sendEmail({
 }
 
 // ============================================================
-// RANDOM CONFIRMATION CODE
+// CONFIRMATION CODE
 // ============================================================
 
 function randomCode(length) {
@@ -479,7 +561,11 @@ function randomCode(length) {
 
   let result = "";
 
-  for (let i = 0; i < length; i++) {
+  for (
+    let i = 0;
+    i < length;
+    i++
+  ) {
     result +=
       characters[
         Math.floor(
@@ -505,6 +591,15 @@ function userEmailHTML({
   return `
 <!DOCTYPE html>
 <html>
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>RISE Waitlist</title>
+</head>
+
 <body style="
   margin:0;
   padding:40px 20px;
@@ -515,16 +610,21 @@ function userEmailHTML({
 <div style="
   max-width:600px;
   margin:auto;
-  background:white;
+  background:#ffffff;
   padding:40px;
   border-radius:18px;
 ">
 
-<h1 style="font-size:38px;margin:0 0 8px;">
+<h1 style="
+  font-size:38px;
+  margin:0 0 8px;
+">
   RISE
 </h1>
 
-<p style="font-size:18px;">
+<p style="
+  font-size:18px;
+">
   Become 1% Better Every Day.
 </p>
 
@@ -556,7 +656,9 @@ function userEmailHTML({
 ">
 
 <p style="margin:0 0 8px;">
-  <strong>Your Waitlist Number</strong>
+  <strong>
+    Your Waitlist Number
+  </strong>
 </p>
 
 <p style="
@@ -564,11 +666,15 @@ function userEmailHTML({
   font-weight:bold;
   margin:0 0 25px;
 ">
-  #${String(waitlistNumber).padStart(4, "0")}
+  #${String(
+    waitlistNumber
+  ).padStart(4, "0")}
 </p>
 
 <p style="margin:0 0 8px;">
-  <strong>Confirmation Code</strong>
+  <strong>
+    Confirmation Code
+  </strong>
 </p>
 
 <p style="
@@ -576,7 +682,9 @@ function userEmailHTML({
   font-weight:bold;
   margin:0;
 ">
-  ${confirmationCode}
+  ${escapeHTML(
+    confirmationCode
+  )}
 </p>
 
 </div>
@@ -613,6 +721,11 @@ function adminEmailHTML({
   return `
 <!DOCTYPE html>
 <html>
+<head>
+  <meta charset="UTF-8">
+  <title>New RISE Waitlist Signup</title>
+</head>
+
 <body style="
   font-family:Arial,Helvetica,sans-serif;
   background:#f5f5f5;
@@ -634,29 +747,33 @@ function adminEmailHTML({
 <hr>
 
 <p>
-<strong>Waitlist #:</strong>
-#${String(waitlistNumber).padStart(4, "0")}
+  <strong>Waitlist #:</strong>
+  #${String(
+    waitlistNumber
+  ).padStart(4, "0")}
 </p>
 
 <p>
-<strong>Name:</strong>
-${escapeHTML(name)}
+  <strong>Name:</strong>
+  ${escapeHTML(name)}
 </p>
 
 <p>
-<strong>Email:</strong>
-${escapeHTML(email)}
+  <strong>Email:</strong>
+  ${escapeHTML(email)}
 </p>
 
 <p>
-<strong>Confirmation Code:</strong>
-${confirmationCode}
+  <strong>Confirmation Code:</strong>
+  ${escapeHTML(
+    confirmationCode
+  )}
 </p>
 
 <hr>
 
 <p>
-New person just joined the RISE waitlist.
+  New person just joined the RISE waitlist.
 </p>
 
 </div>
@@ -672,9 +789,24 @@ New person just joined the RISE waitlist.
 
 function escapeHTML(value) {
   return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+    .replace(
+      /</g,
+      "&lt;"
+    )
+    .replace(
+      />/g,
+      "&gt;"
+    )
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+    .replace(
+      /'/g,
+      "&#039;"
+    );
 }
