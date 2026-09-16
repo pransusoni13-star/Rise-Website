@@ -21,7 +21,7 @@ function clamp(value, min, max) {
 }
 
 function debounce(fn, wait) {
-  let timeoutId;
+  let timeoutId = null;
 
   return function debounced(...args) {
     window.clearTimeout(timeoutId);
@@ -100,11 +100,16 @@ const LoadingScreen = (() => {
   }
 
   function finish() {
-    if (finished) return;
+    if (finished) {
+      return;
+    }
 
     finished = true;
 
-    window.clearInterval(intervalId);
+    if (intervalId !== null) {
+      window.clearInterval(intervalId);
+      intervalId = null;
+    }
 
     progress = 100;
     updateUI();
@@ -112,7 +117,6 @@ const LoadingScreen = (() => {
     window.setTimeout(() => {
       if (screenEl) {
         screenEl.classList.add('is-hidden');
-
         screenEl.setAttribute(
           'aria-hidden',
           'true'
@@ -134,7 +138,9 @@ const LoadingScreen = (() => {
   }
 
   function init() {
-    if (!screenEl) return;
+    if (!screenEl) {
+      return;
+    }
 
     document.body.classList.add(
       'is-loading'
@@ -169,7 +175,9 @@ const LoadingScreen = (() => {
     );
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -205,7 +213,9 @@ const Navbar = (() => {
   let isMobileMenuOpen = false;
 
   function handleScroll() {
-    if (!navbarEl) return;
+    if (!navbarEl) {
+      return;
+    }
 
     navbarEl.classList.toggle(
       'is-scrolled',
@@ -296,11 +306,17 @@ const Navbar = (() => {
   }
 
   function buildSectionMap() {
+    sections.length = 0;
+
     navLinks.forEach((link) => {
       const id =
         link.getAttribute(
           'data-section'
         );
+
+      if (!id) {
+        return;
+      }
 
       const target =
         document.getElementById(id);
@@ -354,9 +370,13 @@ const Navbar = (() => {
   }
 
   function init() {
-    if (!navbarEl) return;
+    if (!navbarEl) {
+      return;
+    }
 
     handleScroll();
+    buildSectionMap();
+    updateActiveLink();
 
     window.addEventListener(
       'scroll',
@@ -366,9 +386,6 @@ const Navbar = (() => {
       ),
       { passive: true }
     );
-
-    buildSectionMap();
-    updateActiveLink();
 
     window.addEventListener(
       'scroll',
@@ -419,12 +436,17 @@ const Navbar = (() => {
           ) {
             closeMobileMenu();
           }
+
+          buildSectionMap();
+          updateActiveLink();
         }, 150)
       );
     }
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -453,7 +475,9 @@ const SmoothScroll = (() => {
       return;
     }
 
-    if (!target) return;
+    if (!target) {
+      return;
+    }
 
     e.preventDefault();
 
@@ -470,7 +494,10 @@ const SmoothScroll = (() => {
       1;
 
     window.scrollTo({
-      top: targetPosition,
+      top: Math.max(
+        0,
+        targetPosition
+      ),
       behavior:
         prefersReducedMotion()
           ? 'auto'
@@ -506,7 +533,9 @@ const SmoothScroll = (() => {
       });
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -526,10 +555,7 @@ const ScrollReveal = (() => {
 
     if (
       prefersReducedMotion() ||
-      !(
-        'IntersectionObserver' in
-        window
-      )
+      !('IntersectionObserver' in window)
     ) {
       revealEls.forEach((el) => {
         el.classList.add(
@@ -571,7 +597,9 @@ const ScrollReveal = (() => {
     });
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -584,8 +612,7 @@ const Counters = (() => {
       parseFloat(
         el.getAttribute(
           'data-target'
-        ),
-        10
+        )
       );
 
     const suffix =
@@ -605,7 +632,8 @@ const Counters = (() => {
     function easeOutExpo(t) {
       return t === 1
         ? 1
-        : 1 - Math.pow(
+        : 1 -
+          Math.pow(
             2,
             -10 * t
           );
@@ -652,6 +680,29 @@ const Counters = (() => {
     );
   }
 
+  function setFinalValue(el) {
+    const target =
+      parseFloat(
+        el.getAttribute(
+          'data-target'
+        )
+      );
+
+    const suffix =
+      el.getAttribute(
+        'data-suffix'
+      ) || '';
+
+    if (Number.isNaN(target)) {
+      return;
+    }
+
+    el.textContent =
+      `${target.toLocaleString(
+        'en-US'
+      )}${suffix}`;
+  }
+
   function init() {
     const counterEls =
       document.querySelectorAll(
@@ -664,29 +715,11 @@ const Counters = (() => {
 
     if (
       prefersReducedMotion() ||
-      !(
-        'IntersectionObserver' in
-        window
-      )
+      !('IntersectionObserver' in window)
     ) {
-      counterEls.forEach((el) => {
-        const target =
-          el.getAttribute(
-            'data-target'
-          );
-
-        const suffix =
-          el.getAttribute(
-            'data-suffix'
-          ) || '';
-
-        el.textContent =
-          `${Number(
-            target
-          ).toLocaleString(
-            'en-US'
-          )}${suffix}`;
-      });
+      counterEls.forEach(
+        setFinalValue
+      );
 
       return;
     }
@@ -720,7 +753,9 @@ const Counters = (() => {
     });
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -752,7 +787,9 @@ const TypingEffect = (() => {
   let timeoutId = null;
 
   function tick() {
-    if (!el) return;
+    if (!el) {
+      return;
+    }
 
     const currentWord =
       words[wordIndex];
@@ -820,7 +857,9 @@ const TypingEffect = (() => {
   }
 
   function init() {
-    if (!el) return;
+    if (!el) {
+      return;
+    }
 
     if (prefersReducedMotion()) {
       el.textContent =
@@ -839,10 +878,12 @@ const TypingEffect = (() => {
   }
 
   function destroy() {
-    if (timeoutId) {
+    if (timeoutId !== null) {
       window.clearTimeout(
         timeoutId
       );
+
+      timeoutId = null;
     }
   }
 
@@ -885,7 +926,7 @@ const MouseParallax = (() => {
       );
     }
 
-    if (!rafId) {
+    if (rafId === null) {
       rafId =
         window.requestAnimationFrame(
           render
@@ -960,7 +1001,9 @@ const MouseParallax = (() => {
     );
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -1027,7 +1070,9 @@ const FaqAccordion = (() => {
           '.faq-question'
         );
 
-      if (!button) return;
+      if (!button) {
+        return;
+      }
 
       button.addEventListener(
         'click',
@@ -1041,7 +1086,9 @@ const FaqAccordion = (() => {
     });
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -1066,10 +1113,7 @@ const StepsProgressLine = (() => {
 
     if (
       prefersReducedMotion() ||
-      !(
-        'IntersectionObserver' in
-        window
-      )
+      !('IntersectionObserver' in window)
     ) {
       fillEl.style.width = '100%';
       return;
@@ -1101,7 +1145,9 @@ const StepsProgressLine = (() => {
     observer.observe(track);
   }
 
-  return { init };
+  return {
+    init
+  };
 })();
 
 /* ================================================================
@@ -1152,10 +1198,6 @@ const WaitlistForm = (() => {
       '.waitlist-note'
     );
 
-  /* IMPORTANT:
-     This is the corrected regex.
-  */
-
   const EMAIL_REGEX =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -1164,7 +1206,9 @@ const WaitlistForm = (() => {
     errorEl,
     message = ''
   ) {
-    if (!input) return;
+    if (!input) {
+      return;
+    }
 
     const hasError =
       Boolean(message);
@@ -1241,9 +1285,7 @@ const WaitlistForm = (() => {
       return false;
     }
 
-    if (
-      !EMAIL_REGEX.test(value)
-    ) {
+    if (!EMAIL_REGEX.test(value)) {
       setFieldError(
         emailInput,
         emailError,
@@ -1261,10 +1303,10 @@ const WaitlistForm = (() => {
     return true;
   }
 
-  function setLoading(
-    isLoading
-  ) {
-    if (!submitBtn) return;
+  function setLoading(isLoading) {
+    if (!submitBtn) {
+      return;
+    }
 
     submitBtn.classList.toggle(
       'is-loading',
@@ -1285,14 +1327,12 @@ const WaitlistForm = (() => {
           ? 'Joining...'
           : 'Reserve My Spot';
     }
+
+    submitBtn.setAttribute(
+      'aria-busy',
+      String(isLoading)
+    );
   }
-
-  /* --------------------------------------------------------------
-     Converts API objects into readable error messages.
-
-     Prevents:
-     [object Object]
-     -------------------------------------------------------------- */
 
   function getErrorMessage(
     data,
@@ -1303,8 +1343,7 @@ const WaitlistForm = (() => {
     }
 
     if (
-      typeof data ===
-      'string'
+      typeof data === 'string'
     ) {
       return data;
     }
@@ -1320,29 +1359,15 @@ const WaitlistForm = (() => {
     ];
 
     for (
-      const value of
-      possibleMessages
+      const value of possibleMessages
     ) {
       if (
-        typeof value ===
-          'string' &&
+        typeof value === 'string' &&
         value.trim()
       ) {
         return value.trim();
       }
     }
-
-    try {
-      const json =
-        JSON.stringify(data);
-
-      if (
-        json &&
-        json !== '{}'
-      ) {
-        return json;
-      }
-    } catch (_) {}
 
     return fallback;
   }
@@ -1366,10 +1391,18 @@ const WaitlistForm = (() => {
 
     successEl.innerHTML = '';
 
+    successEl.setAttribute(
+      'role',
+      'status'
+    );
+
+    successEl.setAttribute(
+      'aria-live',
+      'polite'
+    );
+
     const icon =
-      document.createElement(
-        'div'
-      );
+      document.createElement('div');
 
     icon.className =
       'success-icon';
@@ -1382,9 +1415,7 @@ const WaitlistForm = (() => {
     icon.textContent = '✓';
 
     const heading =
-      document.createElement(
-        'h3'
-      );
+      document.createElement('h3');
 
     heading.textContent =
       data.alreadyJoined
@@ -1392,9 +1423,7 @@ const WaitlistForm = (() => {
         : "You're on the list!";
 
     const message =
-      document.createElement(
-        'p'
-      );
+      document.createElement('p');
 
     if (data.alreadyJoined) {
       message.textContent =
@@ -1412,9 +1441,7 @@ const WaitlistForm = (() => {
     }
 
     const number =
-      document.createElement(
-        'p'
-      );
+      document.createElement('p');
 
     number.className =
       'waitlist-number';
@@ -1445,9 +1472,7 @@ const WaitlistForm = (() => {
     );
 
     const code =
-      document.createElement(
-        'p'
-      );
+      document.createElement('p');
 
     code.className =
       'confirmation-code';
@@ -1487,10 +1512,8 @@ const WaitlistForm = (() => {
     );
 
     if (
-      typeof Toast !==
-        'undefined' &&
-      typeof Toast.show ===
-        'function'
+      typeof Toast !== 'undefined' &&
+      typeof Toast.show === 'function'
     ) {
       Toast.show(
         data.waitlistNumber != null
@@ -1522,9 +1545,7 @@ const WaitlistForm = (() => {
           },
 
           body:
-            JSON.stringify(
-              payload
-            )
+            JSON.stringify(payload)
         }
       );
     } catch (networkError) {
@@ -1546,11 +1567,6 @@ const WaitlistForm = (() => {
     } catch (_) {
       data = null;
     }
-
-    console.log(
-      'RISE waitlist API response:',
-      data
-    );
 
     if (!response.ok) {
       throw new Error(
@@ -1599,10 +1615,8 @@ const WaitlistForm = (() => {
       }
 
       if (
-        typeof Toast !==
-          'undefined' &&
-        typeof Toast.show ===
-          'function'
+        typeof Toast !== 'undefined' &&
+        typeof Toast.show === 'function'
       ) {
         Toast.show(
           'Please fix the highlighted fields.',
@@ -1626,11 +1640,11 @@ const WaitlistForm = (() => {
               .trim()
               .toLowerCase(),
 
-          resendConfirmation: true
+          resendConfirmation:
+            true
         });
 
       showSuccess(data);
-
     } catch (err) {
       console.error(
         'RISE waitlist error:',
@@ -1640,23 +1654,17 @@ const WaitlistForm = (() => {
       const message =
         err instanceof Error
           ? err.message
-          : getErrorMessage(
-              err,
-              'Something went wrong. Please try again.'
-            );
+          : 'Something went wrong. Please try again.';
 
       if (
-        typeof Toast !==
-          'undefined' &&
-        typeof Toast.show ===
-          'function'
+        typeof Toast !== 'undefined' &&
+        typeof Toast.show === 'function'
       ) {
         Toast.show(
           message,
           true
         );
       }
-
     } finally {
       setLoading(false);
     }
@@ -1746,13 +1754,29 @@ const Toast = (() => {
       isError
     );
 
+    toastEl.setAttribute(
+      'role',
+      isError
+        ? 'alert'
+        : 'status'
+    );
+
+    toastEl.setAttribute(
+      'aria-live',
+      isError
+        ? 'assertive'
+        : 'polite'
+    );
+
     toastEl.classList.add(
       'is-visible'
     );
 
-    window.clearTimeout(
-      hideTimeoutId
-    );
+    if (hideTimeoutId !== null) {
+      window.clearTimeout(
+        hideTimeoutId
+      );
+    }
 
     hideTimeoutId =
       window.setTimeout(
@@ -1760,6 +1784,8 @@ const Toast = (() => {
           toastEl.classList.remove(
             'is-visible'
           );
+
+          hideTimeoutId = null;
         },
         3600
       );
@@ -1781,7 +1807,9 @@ const BackToTop = (() => {
     );
 
   function handleScroll() {
-    if (!btnEl) return;
+    if (!btnEl) {
+      return;
+    }
 
     btnEl.classList.toggle(
       'is-visible',
@@ -1801,7 +1829,9 @@ const BackToTop = (() => {
   }
 
   function init() {
-    if (!btnEl) return;
+    if (!btnEl) {
+      return;
+    }
 
     handleScroll();
 
@@ -1842,6 +1872,13 @@ const Marquee = (() => {
       );
 
     if (!track || !wrapper) {
+      return;
+    }
+
+    if (prefersReducedMotion()) {
+      track.style.animationPlayState =
+        'paused';
+
       return;
     }
 
@@ -1927,10 +1964,7 @@ const LazyLoadFallback = (() => {
 
     if (
       lazyImages.length === 0 ||
-      !(
-        'IntersectionObserver' in
-        window
-      )
+      !('IntersectionObserver' in window)
     ) {
       return;
     }
