@@ -1,3 +1,4 @@
+
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 
@@ -8,13 +9,24 @@ const supabase = createClient(
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL =
-  process.env.RESEND_FROM_EMAIL ||
-  process.env.EMAIL_FROM ||
-  'RISE <onboarding@resend.dev>';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 const CODE_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sendJson(res, status, data) {
+  return res.status(status).json(data);
+}
 
 function generateConfirmationCode() {
   let code = '';
@@ -28,213 +40,141 @@ function generateConfirmationCode() {
   return `RISE-${code}`;
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function sendJson(res, status, data) {
-  res.status(status).json(data);
-}
-
-async function sendConfirmationEmail({
-  email,
+function confirmationEmail({
   name,
   waitlistNumber,
   confirmationCode
 }) {
-  const safeName = escapeHtml(name || '');
-  const safeCode = escapeHtml(confirmationCode || '');
-  const safeNumber = escapeHtml(
-    String(waitlistNumber)
-  );
-
-  const emailHtml = `
+  return `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to RISE</title>
-</head>
+<body style="margin:0;background:#0a0a0a;font-family:Arial;color:white;">
+  <div style="max-width:600px;margin:auto;padding:40px 20px;">
+    <div style="background:#111;border:1px solid #292929;border-radius:20px;padding:35px;">
 
-<body style="
-  margin:0;
-  padding:0;
-  background:#0a0a0a;
-  font-family:Arial,Helvetica,sans-serif;
-  color:#ffffff;
-">
+      <h1 style="color:#5cff7a;">RISE</h1>
 
-  <div style="
-    max-width:600px;
-    margin:0 auto;
-    padding:40px 20px;
-  ">
+      <h2>You're officially on the list.</h2>
 
-    <div style="
-      background:#111111;
-      border:1px solid #252525;
-      border-radius:20px;
-      padding:40px 30px;
-    "> 
-
-      <div style="
-        font-size:34px;
-        font-weight:800;
-        color:#5cff7a;
-        margin-bottom:30px;
-      ">
-        RISE
-      </div>
-
-      <h1 style="
-        margin:0 0 15px 0;
-        font-size:30px;
-        line-height:1.2;
-      ">
-        You're officially on the list.
-      </h1>
-
-      <p style="
-        color:#b5b5b5;
-        font-size:16px;
-        line-height:1.6;
-      ">
-        Hey ${safeName},
+      <p style="color:#b5b5b5;">
+        Hey ${escapeHtml(name)},
       </p>
 
-      <p style="
-        color:#b5b5b5;
-        font-size:16px;
-        line-height:1.6;
-      ">
+      <p style="color:#b5b5b5;">
         Welcome to RISE — the system designed to help you
         become 1% better every day.
       </p>
 
-      <div style="
-        margin:30px 0;
-        padding:25px;
-        background:#181818;
-        border-radius:16px;
-      ">
-
-        <p style="
-          margin:0 0 10px 0;
-          color:#8f8f8f;
-          font-size:13px;
-          text-transform:uppercase;
-          letter-spacing:1px;
-        ">
-          Your waitlist number
-        </p>
-
-        <div style="
-          font-size:40px;
-          font-weight:800;
-          color:#5cff7a;
-        ">
-          #${safeNumber}
-        </div>
-
+      <div style="background:#181818;padding:25px;border-radius:15px;">
+        <p style="color:#999;">YOUR WAITLIST NUMBER</p>
+        <h1 style="color:#5cff7a;">
+          #${escapeHtml(waitlistNumber)}
+        </h1>
       </div>
 
-      <div style="
-        margin:30px 0;
-        padding:25px;
-        background:#181818;
-        border-radius:16px;
-      ">
-
-        <p style="
-          margin:0 0 10px 0;
-          color:#8f8f8f;
-          font-size:13px;
-          text-transform:uppercase;
-          letter-spacing:1px;
-        ">
-          Confirmation code
-        </p>
-
-        <div style="
-          font-size:24px;
-          font-weight:700;
-          letter-spacing:2px;
-          color:#ffffff;
-        ">
-          ${safeCode}
-        </div>
-
+      <div style="background:#181818;padding:25px;border-radius:15px;margin-top:20px;">
+        <p style="color:#999;">CONFIRMATION CODE</p>
+        <h2>
+          ${escapeHtml(confirmationCode)}
+        </h2>
       </div>
 
-      <p style="
-        color:#8f8f8f;
-        font-size:14px;
-        line-height:1.6;
-      ">
-        Keep this confirmation code somewhere safe.
-        You'll be able to use it to verify your place
-        on the RISE waitlist.
+      <p style="color:#999;">
+        Keep your confirmation code safe.
       </p>
 
-      <p style="
-        margin-top:35px;
-        color:#ffffff;
-        font-size:16px;
-      ">
-        Keep rising.
-      </p>
+      <p>Keep rising.</p>
 
-      <p style="
-        color:#5cff7a;
-        font-weight:700;
-      ">
+      <p style="color:#5cff7a;font-weight:bold;">
         — The RISE Team
       </p>
 
     </div>
-
   </div>
-
 </body>
 </html>
 `;
+}
 
-  return resend.emails.send({
-    from: FROM_EMAIL,
-    to: [email],
-    subject: `You're #${waitlistNumber} on the RISE waitlist`,
-    html: emailHtml
-  });
+function adminNotificationEmail({
+  name,
+  email,
+  waitlistNumber,
+  confirmationCode
+}) {
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Arial;">
+  <h2>New RISE Waitlist Signup</h2>
+
+  <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+  <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+  <p><strong>Waitlist Number:</strong> #${escapeHtml(waitlistNumber)}</p>
+  <p><strong>Confirmation Code:</strong> ${escapeHtml(confirmationCode)}</p>
+
+  <p>Someone has joined the RISE waitlist.</p>
+</body>
+</html>
+`;
+}
+
+async function sendEmails(details) {
+  const [userEmail, adminEmail] =
+    await Promise.allSettled([
+
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: [details.email],
+        subject:
+          `You're #${details.waitlistNumber} on the RISE waitlist`,
+        html: confirmationEmail(details)
+      }),
+
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: [ADMIN_EMAIL],
+        subject:
+          `New RISE Waitlist Signup — #${details.waitlistNumber}`,
+        html: adminNotificationEmail(details)
+      })
+
+    ]);
+
+  return {
+    userSent:
+      userEmail.status === 'fulfilled' &&
+      !userEmail.value?.error,
+
+    adminSent:
+      adminEmail.status === 'fulfilled' &&
+      !adminEmail.value?.error,
+
+    userResult: userEmail,
+    adminResult: adminEmail
+  };
 }
 
 module.exports = async function handler(req, res) {
-  // ------------------------------------------------------------
-  // CORS / headers
-  // ------------------------------------------------------------
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Allow-Origin',
+    '*'
+  );
+
   res.setHeader(
     'Access-Control-Allow-Methods',
     'POST, OPTIONS'
   );
+
   res.setHeader(
     'Access-Control-Allow-Headers',
     'Content-Type'
   );
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
-
-  // ------------------------------------------------------------
-  // Only allow POST
-  // ------------------------------------------------------------
 
   if (req.method !== 'POST') {
     return sendJson(res, 405, {
@@ -244,471 +184,163 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // ----------------------------------------------------------
-    // Check environment variables
-    // ----------------------------------------------------------
 
-    if (!process.env.SUPABASE_URL) {
-      console.error('Missing SUPABASE_URL');
-
+    if (
+      !process.env.SUPABASE_URL ||
+      !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      !process.env.RESEND_API_KEY ||
+      !FROM_EMAIL ||
+      !ADMIN_EMAIL
+    ) {
       return sendJson(res, 500, {
         success: false,
-        message: 'Server configuration error: Supabase URL is missing.'
+        message:
+          'Server configuration is incomplete.'
       });
     }
-
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('Missing SUPABASE_SERVICE_ROLE_KEY');
-
-      return sendJson(res, 500, {
-        success: false,
-        message: 'Server configuration error: Supabase service key is missing.'
-      });
-    }
-
-    if (!process.env.RESEND_API_KEY) {
-      console.error('Missing RESEND_API_KEY');
-
-      return sendJson(res, 500, {
-        success: false,
-        message: 'Server configuration error: email service key is missing.'
-      });
-    }
-
-    // ----------------------------------------------------------
-    // Read request body
-    // ----------------------------------------------------------
 
     const body =
       typeof req.body === 'string'
         ? JSON.parse(req.body)
-        : req.body;
+        : req.body || {};
 
     const name =
-      typeof body?.name === 'string'
+      typeof body.name === 'string'
         ? body.name.trim()
         : '';
 
     const email =
-      typeof body?.email === 'string'
+      typeof body.email === 'string'
         ? body.email.trim().toLowerCase()
         : '';
 
-    const resendExisting =
-      body?.resend === true ||
-      body?.resendConfirmation === true;
-
-    // ----------------------------------------------------------
-    // Validate name
-    // ----------------------------------------------------------
-
-    if (!name) {
-      return sendJson(res, 400, {
-        success: false,
-        message: 'Please enter your name.'
-      });
-    }
-
-    if (name.length < 2) {
+    if (name.length < 2 || name.length > 100) {
       return sendJson(res, 400, {
         success: false,
         message: 'Please enter a valid name.'
       });
     }
 
-    if (name.length > 100) {
-      return sendJson(res, 400, {
-        success: false,
-        message: 'Name is too long.'
-      });
-    }
-
-    // ----------------------------------------------------------
-    // Validate email
-    // ----------------------------------------------------------
-
-    const EMAIL_REGEX =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!email) {
-      return sendJson(res, 400, {
-        success: false,
-        message: 'Please enter your email.'
-      });
-    }
-
-    if (!EMAIL_REGEX.test(email)) {
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    ) {
       return sendJson(res, 400, {
         success: false,
         message: 'Please enter a valid email address.'
       });
     }
 
-    // ----------------------------------------------------------
-    // Check if email already exists
-    // ----------------------------------------------------------
+    const {
+      data: existingUser,
+      error: lookupError
+    } = await supabase
+      .from('waitlist')
+      .select(
+        'waitlist_number,name,email,confirmation_code'
+      )
+      .eq('email', email)
+      .maybeSingle();
 
-    const { data: existingUser, error: existingError } =
-      await supabase
-        .from('waitlist')
-        .select(
-          'waitlist_number, name, email, confirmation_code, email_status'
-        )
-        .eq('email', email)
-        .maybeSingle();
-
-    if (existingError) {
-      console.error(
-        'Existing-user lookup error:',
-        existingError
-      );
+    if (lookupError) {
+      console.error(lookupError);
 
       return sendJson(res, 500, {
         success: false,
-        message: 'We could not check the waitlist. Please try again.'
+        message: 'Could not check the waitlist.'
       });
     }
 
-    // ----------------------------------------------------------
-    // Already joined
-    // ----------------------------------------------------------
+    let user = existingUser;
+    let alreadyJoined = Boolean(existingUser);
 
-    if (existingUser) {
-      const shouldResendExistingEmail =
-        resendExisting ||
-        existingUser.email_status !== 'sent';
+    if (!user) {
 
-      if (shouldResendExistingEmail) {
-        const { data: emailData, error: emailError } =
-          await sendConfirmationEmail({
-            email,
-            name:
-              typeof existingUser.name === 'string' &&
-              existingUser.name.trim()
-                ? existingUser.name
-                : name,
-            waitlistNumber:
-              existingUser.waitlist_number,
-            confirmationCode:
-              existingUser.confirmation_code
-          });
-
-        if (emailError) {
-          console.error(
-            'Existing-user resend error:',
-            emailError
-          );
-
-          await supabase
-            .from('waitlist')
-            .update({
-              email_status: 'failed',
-              last_email_error:
-                typeof emailError === 'string'
-                  ? emailError
-                  : JSON.stringify(emailError)
-            })
-            .eq('email', email);
-
-          return sendJson(res, 200, {
-            success: true,
-            alreadyJoined: true,
-            waitlistNumber:
-              existingUser.waitlist_number,
-            confirmationCode:
-              existingUser.confirmation_code,
-            emailSent: false,
-            message:
-              'We found your existing waitlist spot, but the confirmation email could not be sent yet.'
-          });
-        }
-
-        await supabase
-          .from('waitlist')
-          .update({
-            email_status: 'sent',
-            email_sent_at:
-              new Date().toISOString(),
-            last_email_error: null
-          })
-          .eq('email', email);
-
-        console.log(
-          'RISE waitlist existing-user resend:',
-          {
-            waitlistNumber:
-              existingUser.waitlist_number,
-            email,
-            resendId: emailData?.id || null
-          }
-        );
-
-        return sendJson(res, 200, {
-          success: true,
-          alreadyJoined: true,
-          waitlistNumber:
-            existingUser.waitlist_number,
-          confirmationCode:
-            existingUser.confirmation_code,
-          emailSent: true
-        });
-      }
-
-      return sendJson(res, 200, {
-        success: true,
-        alreadyJoined: true,
-        waitlistNumber: existingUser.waitlist_number,
-        confirmationCode: existingUser.confirmation_code,
-        emailSent: existingUser.email_status === 'sent'
-      });
-    }
-
-    // ----------------------------------------------------------
-    // Generate waitlist number
-    // ----------------------------------------------------------
-
-    const { data: numberData, error: numberError } =
-      await supabase.rpc(
+      const {
+        data: numberData,
+        error: numberError
+      } = await supabase.rpc(
         'get_or_create_waitlist_number'
       );
 
-    if (numberError) {
-      console.error(
-        'Waitlist number error:',
-        numberError
-      );
+      if (numberError) {
+        console.error(numberError);
 
-      return sendJson(res, 500, {
-        success: false,
-        message:
-          'We could not generate your waitlist number. Please try again.'
-      });
-    }
+        return sendJson(res, 500, {
+          success: false,
+          message:
+            'Could not generate waitlist number.'
+        });
+      }
 
-    const waitlistNumber = Number(numberData);
+      const newUser = {
+        waitlist_number: Number(numberData),
+        name,
+        email,
+        confirmation_code:
+          generateConfirmationCode(),
+        email_status: 'pending'
+      };
 
-    // ----------------------------------------------------------
-    // Generate confirmation code
-    // ----------------------------------------------------------
-
-    const confirmationCode =
-      generateConfirmationCode();
-
-    // ----------------------------------------------------------
-    // Insert user
-    // ----------------------------------------------------------
-
-    const { data: newUser, error: insertError } =
-      await supabase
+      const {
+        data: insertedUser,
+        error: insertError
+      } = await supabase
         .from('waitlist')
-        .insert({
-          waitlist_number: waitlistNumber,
-          name,
-          email,
-          confirmation_code: confirmationCode,
-          email_status: 'pending'
-        })
+        .insert(newUser)
         .select(
-          'waitlist_number, name, email, confirmation_code'
+          'waitlist_number,name,email,confirmation_code'
         )
         .single();
 
-    if (insertError) {
-      console.error(
-        'Waitlist insert error:',
-        insertError
-      );
+      if (insertError) {
+        console.error(insertError);
 
-      return sendJson(res, 500, {
-        success: false,
-        message:
-          'We could not save your waitlist signup. Please try again.'
-      });
+        return sendJson(res, 500, {
+          success: false,
+          message:
+            'Could not save your waitlist signup.'
+        });
+      }
+
+      user = insertedUser;
     }
 
-    // ----------------------------------------------------------
-    // Build confirmation email
-    // ----------------------------------------------------------
+    const details = {
+      name: user.name || name,
+      email: user.email,
+      waitlistNumber: user.waitlist_number,
+      confirmationCode: user.confirmation_code
+    };
 
-    const safeName = escapeHtml(name);
-    const safeCode = escapeHtml(confirmationCode);
-    const safeNumber = escapeHtml(
-      String(waitlistNumber)
-    );
+    const emailResults = await sendEmails(details);
 
-    const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to RISE</title>
-</head>
+    const failures = [];
 
-<body style="
-  margin:0;
-  padding:0;
-  background:#0a0a0a;
-  font-family:Arial,Helvetica,sans-serif;
-  color:#ffffff;
-">
+    if (!emailResults.userSent) {
+      failures.push('confirmation email');
+    }
 
-  <div style="
-    max-width:600px;
-    margin:0 auto;
-    padding:40px 20px;
-  ">
+    if (!emailResults.adminSent) {
+      failures.push('owner notification');
+    }
 
-    <div style="
-      background:#111111;
-      border:1px solid #252525;
-      border-radius:20px;
-      padding:40px 30px;
-    ">
+    if (failures.length === 0) {
 
-      <div style="
-        font-size:34px;
-        font-weight:800;
-        color:#5cff7a;
-        margin-bottom:30px;
-      ">
-        RISE
-      </div>
+      await supabase
+        .from('waitlist')
+        .update({
+          email_status: 'sent',
+          email_sent_at:
+            new Date().toISOString(),
+          last_email_error: null
+        })
+        .eq('email', email);
 
-      <h1 style="
-        margin:0 0 15px 0;
-        font-size:30px;
-        line-height:1.2;
-      ">
-        You're officially on the list.
-      </h1>
+    } else {
 
-      <p style="
-        color:#b5b5b5;
-        font-size:16px;
-        line-height:1.6;
-      ">
-        Hey ${safeName},
-      </p>
-
-      <p style="
-        color:#b5b5b5;
-        font-size:16px;
-        line-height:1.6;
-      ">
-        Welcome to RISE — the system designed to help you
-        become 1% better every day.
-      </p>
-
-      <div style="
-        margin:30px 0;
-        padding:25px;
-        background:#181818;
-        border-radius:16px;
-      ">
-
-        <p style="
-          margin:0 0 10px 0;
-          color:#8f8f8f;
-          font-size:13px;
-          text-transform:uppercase;
-          letter-spacing:1px;
-        ">
-          Your waitlist number
-        </p>
-
-        <div style="
-          font-size:40px;
-          font-weight:800;
-          color:#5cff7a;
-        ">
-          #${safeNumber}
-        </div>
-
-      </div>
-
-      <div style="
-        margin:30px 0;
-        padding:25px;
-        background:#181818;
-        border-radius:16px;
-      ">
-
-        <p style="
-          margin:0 0 10px 0;
-          color:#8f8f8f;
-          font-size:13px;
-          text-transform:uppercase;
-          letter-spacing:1px;
-        ">
-          Confirmation code
-        </p>
-
-        <div style="
-          font-size:24px;
-          font-weight:700;
-          letter-spacing:2px;
-          color:#ffffff;
-        ">
-          ${safeCode}
-        </div>
-
-      </div>
-
-      <p style="
-        color:#8f8f8f;
-        font-size:14px;
-        line-height:1.6;
-      ">
-        Keep this confirmation code somewhere safe.
-        You'll be able to use it to verify your place
-        on the RISE waitlist.
-      </p>
-
-      <p style="
-        margin-top:35px;
-        color:#ffffff;
-        font-size:16px;
-      ">
-        Keep rising.
-      </p>
-
-      <p style="
-        color:#5cff7a;
-        font-weight:700;
-      ">
-        — The RISE Team
-      </p>
-
-    </div>
-
-  </div>
-
-</body>
-</html>
-`;
-
-    // ----------------------------------------------------------
-    // Send email
-    // ----------------------------------------------------------
-
-    const { data: emailData, error: emailError } =
-      await resend.emails.send({
-        from: FROM_EMAIL,
-        to: [email],
-        subject:
-          `You're #${waitlistNumber} on the RISE waitlist`,
-        html: emailHtml
-      });
-
-    // ----------------------------------------------------------
-    // Email failed
-    // ----------------------------------------------------------
-
-    if (emailError) {
       console.error(
-        'Resend error:',
-        emailError
+        'Email delivery failure:',
+        emailResults
       );
 
       await supabase
@@ -716,78 +348,49 @@ module.exports = async function handler(req, res) {
         .update({
           email_status: 'failed',
           last_email_error:
-            typeof emailError === 'string'
-              ? emailError
-              : JSON.stringify(emailError)
+            failures.join(', ')
         })
-        .eq(
-          'waitlist_number',
-          waitlistNumber
-        );
-
-      // IMPORTANT:
-      // The user IS still saved to the waitlist.
-      // We return the number/code so the signup is not lost.
-
-      return sendJson(res, 200, {
-        success: true,
-        alreadyJoined: false,
-        waitlistNumber,
-        confirmationCode,
-        emailSent: false,
-        message:
-          'You joined the waitlist, but the confirmation email could not be sent yet.'
-      });
+        .eq('email', email);
     }
 
-    // ----------------------------------------------------------
-    // Mark email as sent
-    // ----------------------------------------------------------
-
-    await supabase
-      .from('waitlist')
-      .update({
-        email_status: 'sent',
-        email_sent_at: new Date().toISOString(),
-        last_email_error: null
-      })
-      .eq(
-        'waitlist_number',
-        waitlistNumber
-      );
-
-    // ----------------------------------------------------------
-    // Success
-    // ----------------------------------------------------------
-
-    console.log(
-      'RISE waitlist signup:',
-      {
-        waitlistNumber,
-        email,
-        resendId: emailData?.id || null
-      }
-    );
-
     return sendJson(res, 200, {
+
       success: true,
-      alreadyJoined: false,
-      waitlistNumber,
-      confirmationCode,
-      emailSent: true
+
+      alreadyJoined,
+
+      waitlistNumber:
+        details.waitlistNumber,
+
+      confirmationCode:
+        details.confirmationCode,
+
+      emailSent:
+        emailResults.userSent,
+
+      adminEmailSent:
+        emailResults.adminSent,
+
+      message:
+        failures.length > 0
+          ? `Your spot is saved, but ${failures.join(' and ')} could not be sent.`
+          : 'You successfully joined the RISE waitlist.'
+
     });
 
   } catch (error) {
 
     console.error(
-      'RISE waitlist server error:',
+      'RISE server error:',
       error
     );
 
     return sendJson(res, 500, {
       success: false,
       message:
-        'Something went wrong on the server. Please try again.'
+        'Something went wrong on the server.'
     });
+
   }
+
 };
