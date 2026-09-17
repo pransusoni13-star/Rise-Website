@@ -52,8 +52,7 @@ export default async function handler(req, res) {
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(500).json({
       success: false,
-      error:
-        "SUPABASE_SERVICE_ROLE_KEY is not configured.",
+      error: "SUPABASE_SERVICE_ROLE_KEY is not configured.",
     });
   }
 
@@ -88,9 +87,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // FIXED EMAIL REGEX
-  const EMAIL_REGEX =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   if (!EMAIL_REGEX.test(cleanEmail)) {
     return res.status(400).json({
@@ -103,39 +100,26 @@ export default async function handler(req, res) {
   // SUPABASE REQUEST HELPER
   // ============================================================
 
-  async function supabaseRequest(
-    endpoint,
-    options = {}
-  ) {
+  async function supabaseRequest(endpoint, options = {}) {
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/${endpoint}`,
       {
         ...options,
-
         headers: {
-          apikey:
-            SUPABASE_SERVICE_ROLE_KEY,
-
-          Authorization:
-            `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-
-          "Content-Type":
-            "application/json",
-
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
           ...options.headers,
         },
       }
     );
 
-    const text =
-      await response.text();
+    const text = await response.text();
 
     let data = null;
 
     try {
-      data = text
-        ? JSON.parse(text)
-        : null;
+      data = text ? JSON.parse(text) : null;
     } catch {
       data = text;
     }
@@ -145,6 +129,7 @@ export default async function handler(req, res) {
         `Supabase ${response.status}: ${
           data?.message ||
           data?.hint ||
+          data?.details ||
           JSON.stringify(data)
         }`
       );
@@ -161,64 +146,66 @@ export default async function handler(req, res) {
     // ----------------------------------------------------------
     // CHECK EXISTING EMAIL
     // ----------------------------------------------------------
+    //
+    // IMPORTANT:
+    // We only select columns that actually exist in your table.
+    // There is NO id and NO created_at here.
+    // ----------------------------------------------------------
 
-    const existing =
-      await supabaseRequest(
-        `waitlist?email=eq.${encodeURIComponent(
-          cleanEmail
-        )}&select=id,name,email,waitlist_number,confirmation_code,created_at`
-      );
+    const existing = await supabaseRequest(
+      `waitlist?email=eq.${encodeURIComponent(
+        cleanEmail
+      )}&select=waitlist_number,name,email,confirmation_code,joined_at`
+    );
 
     // ----------------------------------------------------------
     // EXISTING USER
     // ----------------------------------------------------------
 
-    if (
-      Array.isArray(existing) &&
-      existing.length > 0
-    ) {
-      const existingUser =
-        existing[0];
+    if (Array.isArray(existing) && existing.length > 0) {
+      const existingUser = existing[0];
 
-      const waitlistNumber =
-        Number(
-          existingUser.waitlist_number ||
-          existingUser.id
+      const waitlistNumber = Number(
+        existingUser.waitlist_number
+      );
+
+      // Safety check
+      if (!Number.isFinite(waitlistNumber)) {
+        console.error(
+          "EXISTING USER HAS INVALID WAITLIST NUMBER:",
+          existingUser
         );
+
+        return res.status(500).json({
+          success: false,
+          error:
+            "Your waitlist record exists, but its waitlist number is invalid. Please contact RISE support.",
+        });
+      }
 
       let emailSent = false;
 
       // --------------------------------------------------------
-      // RESEND CONFIRMATION
+      // RESEND EXISTING CONFIRMATION
       // --------------------------------------------------------
 
-      if (
-        resendConfirmation !== false
-      ) {
+      if (resendConfirmation !== false) {
         try {
           await sendEmail({
             apiKey: RESEND_API_KEY,
-
             from:
               RESEND_FROM_EMAIL ||
               "RISE <onboarding@resend.dev>",
-
             to: cleanEmail,
-
             subject:
               `Your RISE Waitlist Confirmation — #${String(
                 waitlistNumber
               ).padStart(4, "0")}`,
-
             html: userEmailHTML({
-              name:
-                existingUser.name,
-
+              name: existingUser.name,
               waitlistNumber,
-
               confirmationCode:
                 existingUser.confirmation_code,
-
               existing: true,
             }),
           });
@@ -234,16 +221,11 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         success: true,
-
         alreadyJoined: true,
-
         emailSent,
-
         waitlistNumber,
-
         confirmationCode:
           existingUser.confirmation_code,
-
         message:
           "This email is already on the RISE waitlist.",
       });
@@ -258,14 +240,18 @@ export default async function handler(req, res) {
 
     // ----------------------------------------------------------
     // GET NEXT WAITLIST NUMBER
+    // ----------------------------------------------------------
     //
-    // This looks at the highest existing number and adds 1.
+    // Your existing 44 people remain untouched.
+    //
+    // If the highest number is 44:
+    // next person = 45
+    //
     // ----------------------------------------------------------
 
-    const latest =
-      await supabaseRequest(
-        "waitlist?select=waitlist_number&order=waitlist_number.desc&limit=1"
-      );
+    const latest = await supabaseRequest(
+      "waitlist?select=waitlist_number&order=waitlist_number.desc&limit=1"
+    );
 
     let nextNumber = 1;
 
@@ -274,10 +260,13 @@ export default async function handler(req, res) {
       latest.length > 0 &&
       latest[0].waitlist_number != null
     ) {
-      nextNumber =
-        Number(
-          latest[0].waitlist_number
-        ) + 1;
+      const highestNumber = Number(
+        latest[0].waitlist_number
+      );
+
+      if (Number.isFinite(highestNumber)) {
+        nextNumber = highestNumber + 1;
+      }
     }
 
     // ----------------------------------------------------------
@@ -287,35 +276,64 @@ export default async function handler(req, res) {
     let inserted;
 
     try {
-      inserted =
-        await supabaseRequest(
-          "waitlist",
-          {
-            method: "POST",
+      inserted = await supabaseRequest(
+        "waitlist",
+        {
+          method: "POST",
 
-            headers: {
-              Prefer:
-                "return=representation",
-            },
+          headers: {
+            Prefer: "return=representation",
+          },
 
-            body: JSON.stringify({
-              name: cleanName,
-
-              email: cleanEmail,
-
-              waitlist_number:
-                nextNumber,
-
-              confirmation_code:
-                confirmationCode,
-            }),
-          }
-        );
+          body: JSON.stringify({
+            name: cleanName,
+            email: cleanEmail,
+            waitlist_number: nextNumber,
+            confirmation_code: confirmationCode,
+          }),
+        }
+      );
     } catch (error) {
       console.error(
         "SUPABASE INSERT ERROR:",
         error?.message || error
       );
+
+      // Handle duplicate email safely in case two requests
+      // happen at nearly the same time.
+      try {
+        const duplicate = await supabaseRequest(
+          `waitlist?email=eq.${encodeURIComponent(
+            cleanEmail
+          )}&select=waitlist_number,name,email,confirmation_code,joined_at`
+        );
+
+        if (
+          Array.isArray(duplicate) &&
+          duplicate.length > 0
+        ) {
+          const duplicateUser = duplicate[0];
+
+          return res.status(200).json({
+            success: true,
+            alreadyJoined: true,
+            emailSent: false,
+            waitlistNumber: Number(
+              duplicateUser.waitlist_number
+            ),
+            confirmationCode:
+              duplicateUser.confirmation_code,
+            message:
+              "This email is already on the RISE waitlist.",
+          });
+        }
+      } catch (duplicateCheckError) {
+        console.error(
+          "DUPLICATE CHECK ERROR:",
+          duplicateCheckError?.message ||
+            duplicateCheckError
+        );
+      }
 
       return res.status(500).json({
         success: false,
@@ -335,13 +353,24 @@ export default async function handler(req, res) {
       });
     }
 
-    const user =
-      inserted[0];
+    const user = inserted[0];
 
-    const waitlistNumber =
-      Number(
-        user.waitlist_number
+    const waitlistNumber = Number(
+      user.waitlist_number
+    );
+
+    if (!Number.isFinite(waitlistNumber)) {
+      console.error(
+        "INSERTED USER HAS INVALID WAITLIST NUMBER:",
+        user
       );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          "Your signup was saved, but the waitlist number could not be read.",
+      });
+    }
 
     // ==========================================================
     // SEND USER EMAIL
@@ -349,9 +378,7 @@ export default async function handler(req, res) {
 
     let userEmailSent = false;
 
-    if (
-      resendConfirmation !== false
-    ) {
+    if (resendConfirmation !== false) {
       try {
         await sendEmail({
           apiKey: RESEND_API_KEY,
@@ -365,18 +392,12 @@ export default async function handler(req, res) {
           subject:
             `You're #${String(
               waitlistNumber
-            ).padStart(
-              4,
-              "0"
-            )} on the RISE waitlist 🚀`,
+            ).padStart(4, "0")} on the RISE waitlist 🚀`,
 
           html: userEmailHTML({
             name: cleanName,
-
             waitlistNumber,
-
             confirmationCode,
-
             existing: false,
           }),
         });
@@ -409,18 +430,12 @@ export default async function handler(req, res) {
         subject:
           `New RISE Waitlist Signup — #${String(
             waitlistNumber
-          ).padStart(
-            4,
-            "0"
-          )}`,
+          ).padStart(4, "0")}`,
 
         html: adminEmailHTML({
           name: cleanName,
-
           email: cleanEmail,
-
           waitlistNumber,
-
           confirmationCode,
         }),
       });
@@ -434,7 +449,7 @@ export default async function handler(req, res) {
     }
 
     // ==========================================================
-    // FINAL LOG
+    // LOG
     // ==========================================================
 
     console.log(
@@ -442,11 +457,8 @@ export default async function handler(req, res) {
       JSON.stringify(
         {
           waitlistNumber,
-
           email: cleanEmail,
-
           userEmailSent,
-
           adminEmailSent,
         },
         null,
@@ -460,17 +472,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-
       alreadyJoined: false,
-
       emailSent: userEmailSent,
-
       adminEmailSent,
-
       waitlistNumber,
-
       confirmationCode,
-
       message:
         "You are officially on the RISE waitlist.",
     });
@@ -499,41 +505,31 @@ async function sendEmail({
   subject,
   html,
 }) {
-  const response =
-    await fetch(
-      "https://api.resend.com/emails",
-      {
-        method: "POST",
+  const response = await fetch(
+    "https://api.resend.com/emails",
+    {
+      method: "POST",
 
-        headers: {
-          Authorization:
-            `Bearer ${apiKey}`,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
 
-          "Content-Type":
-            "application/json",
-        },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        html,
+      }),
+    }
+  );
 
-        body: JSON.stringify({
-          from,
-
-          to: [to],
-
-          subject,
-
-          html,
-        }),
-      }
-    );
-
-  const text =
-    await response.text();
+  const text = await response.text();
 
   let data = null;
 
   try {
-    data = text
-      ? JSON.parse(text)
-      : null;
+    data = text ? JSON.parse(text) : null;
   } catch {
     data = text;
   }
@@ -561,16 +557,11 @@ function randomCode(length) {
 
   let result = "";
 
-  for (
-    let i = 0;
-    i < length;
-    i++
-  ) {
+  for (let i = 0; i < length; i++) {
     result +=
       characters[
         Math.floor(
-          Math.random() *
-            characters.length
+          Math.random() * characters.length
         )
       ];
   }
@@ -656,9 +647,7 @@ function userEmailHTML({
 ">
 
 <p style="margin:0 0 8px;">
-  <strong>
-    Your Waitlist Number
-  </strong>
+  <strong>Your Waitlist Number</strong>
 </p>
 
 <p style="
@@ -666,15 +655,11 @@ function userEmailHTML({
   font-weight:bold;
   margin:0 0 25px;
 ">
-  #${String(
-    waitlistNumber
-  ).padStart(4, "0")}
+  #${String(waitlistNumber).padStart(4, "0")}
 </p>
 
 <p style="margin:0 0 8px;">
-  <strong>
-    Confirmation Code
-  </strong>
+  <strong>Confirmation Code</strong>
 </p>
 
 <p style="
@@ -682,9 +667,7 @@ function userEmailHTML({
   font-weight:bold;
   margin:0;
 ">
-  ${escapeHTML(
-    confirmationCode
-  )}
+  ${escapeHTML(confirmationCode)}
 </p>
 
 </div>
@@ -748,9 +731,7 @@ function adminEmailHTML({
 
 <p>
   <strong>Waitlist #:</strong>
-  #${String(
-    waitlistNumber
-  ).padStart(4, "0")}
+  #${String(waitlistNumber).padStart(4, "0")}
 </p>
 
 <p>
@@ -765,9 +746,7 @@ function adminEmailHTML({
 
 <p>
   <strong>Confirmation Code:</strong>
-  ${escapeHTML(
-    confirmationCode
-  )}
+  ${escapeHTML(confirmationCode)}
 </p>
 
 <hr>
@@ -789,24 +768,9 @@ function adminEmailHTML({
 
 function escapeHTML(value) {
   return String(value)
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
-    )
-    .replace(
-      /'/g,
-      "&#039;"
-    );
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
