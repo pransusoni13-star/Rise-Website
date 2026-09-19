@@ -1,11 +1,15 @@
 // api/waitlist.js
 
-export default async function handler(req, res) {
+const { randomInt } = require('node:crypto');
+
+module.exports = async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
   // ============================================================
   // METHOD
   // ============================================================
 
   if (req.method !== "POST") {
+    res.setHeader('Allow', 'POST');
     return res.status(405).json({
       success: false,
       error: "Method not allowed.",
@@ -19,6 +23,7 @@ export default async function handler(req, res) {
   const {
     RESEND_API_KEY,
     RISE_ADMIN_EMAIL,
+    RISE_FROM_EMAIL,
     RESEND_FROM_EMAIL,
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY,
@@ -32,13 +37,6 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       error: "RESEND_API_KEY is not configured.",
-    });
-  }
-
-  if (!RISE_ADMIN_EMAIL) {
-    return res.status(500).json({
-      success: false,
-      error: "RISE_ADMIN_EMAIL is not configured.",
     });
   }
 
@@ -80,7 +78,7 @@ export default async function handler(req, res) {
   // VALIDATION
   // ============================================================
 
-  if (cleanName.length < 2) {
+  if (cleanName.length < 2 || cleanName.length > 100) {
     return res.status(400).json({
       success: false,
       error: "Please enter a valid name.",
@@ -89,7 +87,7 @@ export default async function handler(req, res) {
 
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!EMAIL_REGEX.test(cleanEmail)) {
+  if (cleanEmail.length > 254 || !EMAIL_REGEX.test(cleanEmail)) {
     return res.status(400).json({
       success: false,
       error: "Please enter a valid email address.",
@@ -105,6 +103,7 @@ export default async function handler(req, res) {
       `${SUPABASE_URL}/rest/v1/${endpoint}`,
       {
         ...options,
+        signal: AbortSignal.timeout(10000),
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -125,7 +124,7 @@ export default async function handler(req, res) {
     }
 
     if (!response.ok) {
-      throw new Error(
+      const error = new Error(
         `Supabase ${response.status}: ${
           data?.message ||
           data?.hint ||
@@ -133,6 +132,8 @@ export default async function handler(req, res) {
           JSON.stringify(data)
         }`
       );
+      error.code = data?.code;
+      throw error;
     }
 
     return data;
@@ -155,7 +156,7 @@ export default async function handler(req, res) {
     const existing = await supabaseRequest(
       `waitlist?email=eq.${encodeURIComponent(
         cleanEmail
-      )}&select=waitlist_number,name,email,confirmation_code,joined_at`
+      )}&select=waitlist_number,name,email,confirmation_code,joined_at,email_sent_at`
     );
 
     // ----------------------------------------------------------
@@ -189,12 +190,14 @@ export default async function handler(req, res) {
       // RESEND EXISTING CONFIRMATION
       // --------------------------------------------------------
 
-      if (resendConfirmation !== false) {
+      const recentlySent = existingUser.email_sent_at &&
+        Date.now() - Date.parse(existingUser.email_sent_at) < 60000;
+      if (resendConfirmation !== false && !recentlySent) {
         try {
           await sendEmail({
             apiKey: RESEND_API_KEY,
             from:
-              RESEND_FROM_EMAIL ||
+              RESEND_FROM_EMAIL || RISE_FROM_EMAIL ||
               "RISE <onboarding@resend.dev>",
             to: cleanEmail,
             subject:
@@ -211,6 +214,7 @@ export default async function handler(req, res) {
           });
 
           emailSent = true;
+          await recordEmailStatus(cleanEmail, true);
         } catch (error) {
           console.error(
             "EXISTING USER EMAIL ERROR:",
@@ -224,8 +228,6 @@ export default async function handler(req, res) {
         alreadyJoined: true,
         emailSent,
         waitlistNumber,
-        confirmationCode:
-          existingUser.confirmation_code,
         message:
           "This email is already on the RISE waitlist.",
       });
@@ -242,10 +244,8 @@ export default async function handler(req, res) {
     // GET NEXT WAITLIST NUMBER
     // ----------------------------------------------------------
     //
-    // Your existing 44 people remain untouched.
-    //
-    // If the highest number is 44:
-    // next person = 45
+    // Existing members keep their position. The next person receives
+    // the number immediately after the current highest number.
     //
     // ----------------------------------------------------------
 
@@ -276,7 +276,9 @@ export default async function handler(req, res) {
     let inserted;
 
     try {
-      inserted = await supabaseRequest(
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          inserted = await supabaseRequest(
         "waitlist",
         {
           method: "POST",
@@ -292,7 +294,16 @@ export default async function handler(req, res) {
             confirmation_code: confirmationCode,
           }),
         }
-      );
+          );
+          break;
+        } catch (error) {
+          if (error.code !== '23505' || attempt === 4) throw error;
+          const highest = await supabaseRequest(
+            'waitlist?select=waitlist_number&order=waitlist_number.desc&limit=1'
+          );
+          nextNumber = Number(highest?.[0]?.waitlist_number || 0) + 1;
+        }
+      }
     } catch (error) {
       console.error(
         "SUPABASE INSERT ERROR:",
@@ -321,8 +332,6 @@ export default async function handler(req, res) {
             waitlistNumber: Number(
               duplicateUser.waitlist_number
             ),
-            confirmationCode:
-              duplicateUser.confirmation_code,
             message:
               "This email is already on the RISE waitlist.",
           });
@@ -384,7 +393,7 @@ export default async function handler(req, res) {
           apiKey: RESEND_API_KEY,
 
           from:
-            RESEND_FROM_EMAIL ||
+            RESEND_FROM_EMAIL || RISE_FROM_EMAIL ||
             "RISE <onboarding@resend.dev>",
 
           to: cleanEmail,
@@ -410,6 +419,7 @@ export default async function handler(req, res) {
         );
       }
     }
+    await recordEmailStatus(cleanEmail, userEmailSent);
 
     // ==========================================================
     // SEND ADMIN EMAIL
@@ -418,11 +428,12 @@ export default async function handler(req, res) {
     let adminEmailSent = false;
 
     try {
+      if (!RISE_ADMIN_EMAIL) throw new Error('Admin notifications are not configured.');
       await sendEmail({
         apiKey: RESEND_API_KEY,
 
         from:
-          RESEND_FROM_EMAIL ||
+          RESEND_FROM_EMAIL || RISE_FROM_EMAIL ||
           "RISE <onboarding@resend.dev>",
 
         to: RISE_ADMIN_EMAIL,
@@ -492,7 +503,20 @@ export default async function handler(req, res) {
         "Something went wrong. Please try again.",
     });
   }
-}
+  async function recordEmailStatus(email, sent) {
+    try {
+      await supabaseRequest(`waitlist?email=eq.${encodeURIComponent(email)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          email_status: sent ? 'sent' : 'failed',
+          ...(sent ? { email_sent_at: new Date().toISOString() } : {}),
+        }),
+      });
+    } catch (error) {
+      console.error('Could not record email delivery status:', error.message);
+    }
+  }
+};
 
 // ============================================================
 // RESEND EMAIL
@@ -509,6 +533,7 @@ async function sendEmail({
     "https://api.resend.com/emails",
     {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
 
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -560,9 +585,7 @@ function randomCode(length) {
   for (let i = 0; i < length; i++) {
     result +=
       characters[
-        Math.floor(
-          Math.random() * characters.length
-        )
+        randomInt(characters.length)
       ];
   }
 
@@ -674,6 +697,12 @@ function userEmailHTML({
 
 <p>
   Keep this email for your records.
+</p>
+
+<p style="margin:28px 0;">
+  <a href="https://rise-website-neon-chi.vercel.app/" style="display:inline-block;background:#22c55e;color:#071109;text-decoration:none;font-weight:bold;padding:14px 22px;border-radius:10px;">
+    Visit the RISE website
+  </a>
 </p>
 
 <p style="

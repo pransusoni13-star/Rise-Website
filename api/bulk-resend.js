@@ -1,15 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+const { timingSafeEqual } = require('node:crypto');
 
 const FROM_EMAIL =
   process.env.RESEND_FROM_EMAIL ||
+  process.env.RISE_FROM_EMAIL ||
   process.env.EMAIL_FROM ||
   'RISE <onboarding@resend.dev>';
 
@@ -60,7 +56,7 @@ function buildEmailHtml({ name, waitlistNumber, confirmationCode }) {
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -73,6 +69,13 @@ module.exports = async function handler(req, res) {
       success: false,
       message: 'Method not allowed.'
     });
+  }
+
+  const expected = process.env.BULK_RESEND_TOKEN;
+  const supplied = req.headers.authorization || '';
+  if (!expected || supplied.length !== `Bearer ${expected}`.length ||
+      !timingSafeEqual(Buffer.from(supplied), Buffer.from(`Bearer ${expected}`))) {
+    return res.status(401).json({ success: false, message: 'Unauthorized.' });
   }
 
   try {
@@ -90,6 +93,8 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const resend = new Resend(process.env.RESEND_API_KEY);
     const { data: users, error: usersError } = await supabase
       .from('waitlist')
       .select('waitlist_number, name, email, confirmation_code, email_status')
