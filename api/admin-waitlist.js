@@ -3,8 +3,8 @@ const { timingSafeEqual } = require('node:crypto');
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  if (!['GET', 'POST'].includes(req.method)) {
-    res.setHeader('Allow', 'GET, POST');
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, POST, DELETE');
     return res.status(405).json({ success: false, error: 'Method not allowed.' });
   }
 
@@ -40,8 +40,10 @@ module.exports = async function handler(req, res) {
   }
 
   const readRows = () => db(
-    'waitlist?select=waitlist_number,email,joined_at&order=joined_at.asc,waitlist_number.asc'
+    'waitlist?select=waitlist_number,name,email,joined_at&order=joined_at.asc,waitlist_number.asc'
   );
+
+  const normalizeName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
   function summarize(rows) {
     const emailCounts = new Map();
@@ -74,10 +76,22 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, audit: before });
     }
 
+    const requestedNames = req.method === 'DELETE' && Array.isArray(req.body?.names)
+      ? new Set(req.body.names.map(normalizeName).filter(Boolean))
+      : new Set();
+    const requestedRemovalNumbers = beforeRows
+      .filter((row) => requestedNames.has(normalizeName(row.name)))
+      .map((row) => Number(row.waitlist_number));
+
+    if (requestedRemovalNumbers.length) {
+      await db(`waitlist?waitlist_number=in.(${requestedRemovalNumbers.join(',')})`, { method: 'DELETE' });
+    }
+
+    const rowsAfterRequestedRemoval = requestedRemovalNumbers.length ? await readRows() : beforeRows;
     const seen = new Set();
     const keep = [];
     const duplicateNumbers = [];
-    for (const row of beforeRows) {
+    for (const row of rowsAfterRequestedRemoval) {
       const email = String(row.email || '').trim().toLowerCase();
       if (seen.has(email)) duplicateNumbers.push(Number(row.waitlist_number));
       else {
@@ -115,6 +129,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+      removedRequestedNames: requestedRemovalNumbers.length,
       removedDuplicates: duplicateNumbers.length,
       renumbered: needsRenumber,
       before,
